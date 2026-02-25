@@ -12,63 +12,69 @@
       darkMode: 'class',
       theme: {
         extend: {
-          fontFamily: { sans: ['Inter', 'sans-serif'] }
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          animation: {
+            'marquee': 'marquee 40s linear infinite',
+          },
+          keyframes: {
+            marquee: {
+              '0%': { transform: 'translateX(0%)' },
+              '100%': { transform: 'translateX(-50%)' },
+            }
+          }
         }
       }
     }
   </script>
 
-  <!-- Phosphor Icons (No-Build Alternative to Lucide) -->
+  <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
-  <!-- React & ReactDOM via CDN -->
+  <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-
-  <!-- Babel (Translates JSX in the browser) -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Chart.js via CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <!-- Custom Scrollbar -->
   <style>
     body { font-family: 'Inter', sans-serif; }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
     .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.5); }
+    
+    /* Hide scrollbar for the ticker but allow logic */
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
   </style>
 </head>
 <body class="antialiased bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
 
   <div id="root"></div>
 
-  <!-- BROWSER REACT CODE -->
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
-    // --- CONFIG & CONSTANTS ---
     const STORAGE_KEY = 'lw_tactical_v16_github';
+    const SETTINGS_KEY = 'lw_tactical_settings';
     const DEFAULT_YEAR = new Date().getFullYear();
     const DEFAULT_MONTH = new Date().getMonth() + 1;
     const CATEGORIES = ['income', 'expenses', 'invest', 'assets'];
 
-    // --- HELPER FUNCTIONS ---
     const formatCurrency = (val) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
 
     const getEmptyMonth = () => ({
       income: [], expenses: [], invest: [], assets: []
     });
 
-    const calculateFIRE = (assets, invest, expenses) => {
-      const target = expenses * 12 * 25; // 4% Rule
+    const calculateFIRE = (assets, invest, expenses, settings) => {
+      const target = expenses * 12 * (100 / settings.fireSWR); 
       if (assets >= target) return 0;
       if (invest <= 0 && assets <= 0) return 999;
       
       let current = assets;
       let months = 0;
-      const monthlyRate = 0.07 / 12; // 7% annual ROI
+      const monthlyRate = (settings.fireROI / 100) / 12; 
       
       while (current < target && months < 600) { 
         current = current * (1 + monthlyRate) + invest;
@@ -77,32 +83,36 @@
       return months / 12;
     };
 
-    // Safe LocalStorage Handlers
     const loadState = () => {
       try {
         const saved = window.localStorage.getItem(STORAGE_KEY);
         if (saved) return JSON.parse(saved);
-      } catch (e) {
-        console.warn("L/W Tactical: LocalStorage blockiert. Nutze Memory-State.");
-      }
+      } catch (e) {}
       return { [DEFAULT_YEAR]: { [DEFAULT_MONTH]: getEmptyMonth() } };
     };
 
-    const saveState = (db) => {
+    const loadSettings = () => {
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+        const saved = window.localStorage.getItem(SETTINGS_KEY);
+        if (saved) return JSON.parse(saved);
       } catch (e) {}
+      return { emergencyMonths: 6, fireSWR: 4, fireROI: 7 };
     };
 
-    // --- MAIN APP COMPONENT ---
+    const saveState = (db) => { try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); } catch (e) {} };
+    const saveSettings = (settings) => { try { window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {} };
+
     function App() {
       const [db, setDb] = useState(loadState());
+      const [settings, setSettings] = useState(loadSettings());
       const [currentYear, setCurrentYear] = useState(DEFAULT_YEAR);
       const [currentMonth, setCurrentMonth] = useState(DEFAULT_MONTH);
       const [view, setView] = useState('month'); 
       const [darkMode, setDarkMode] = useState(true);
-      const [cryptoData, setCryptoData] = useState({ bitcoin: null, ethereum: null, solana: null });
+      const [cryptoList, setCryptoList] = useState([]);
       const [isClient, setIsClient] = useState(false);
+      const [showSettings, setShowSettings] = useState(false);
+      const [importSource, setImportSource] = useState('');
 
       useEffect(() => {
         setIsClient(true);
@@ -111,10 +121,8 @@
         }
       }, []);
 
-      useEffect(() => {
-        if (!isClient) return;
-        saveState(db);
-      }, [db, isClient]);
+      useEffect(() => { if (isClient) saveState(db); }, [db, isClient]);
+      useEffect(() => { if (isClient) saveSettings(settings); }, [settings, isClient]);
 
       useEffect(() => {
         if (darkMode) document.documentElement.classList.add('dark');
@@ -124,11 +132,9 @@
       useEffect(() => {
         const fetchCrypto = async () => {
           try {
-            const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=eur&include_24hr_change=true');
+            const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&order=market_cap_desc&per_page=10&page=1&sparkline=false');
             const data = await res.json();
-            if (data && data.bitcoin) {
-              setCryptoData(data);
-            }
+            if (Array.isArray(data)) setCryptoList(data);
           } catch (err) {
             console.warn("Crypto API offline.");
           }
@@ -170,29 +176,49 @@
         const savingsRate = incRec > 0 ? ((incRec - expRec) / incRec) * 100 : 0;
         const restBudget = cashflow - invRec;
         
-        const emergencyTarget = expRec * 6;
+        const emergencyTarget = expRec * settings.emergencyMonths;
         const emergencyProgress = emergencyTarget > 0 ? Math.min(100, (assTot / emergencyTarget) * 100) : 0;
         
-        const fireYears = calculateFIRE(assTot, invRec, expRec);
+        const fireYears = calculateFIRE(assTot, invRec, expRec, settings);
         const runwayMonths = expRec > 0 ? (assTot / expRec) : 0;
         
-        const btcEq = cryptoData?.bitcoin?.eur ? (assTot / cryptoData.bitcoin.eur).toFixed(2) : 0;
+        const btcData = cryptoList.find(c => c.symbol === 'btc');
+        const btcEq = btcData ? (assTot / btcData.current_price).toFixed(2) : 0;
+        
+        const dailyBurnRate = expRec / 30;
 
         return {
           netWorth: assTot, btcEq, cashflow, savingsRate, restBudget, 
-          emergencyProgress, emergencyTarget, fireYears, runwayMonths, expRec, incRec
+          emergencyProgress, emergencyTarget, fireYears, runwayMonths, expRec, incRec, dailyBurnRate
         };
-      }, [currentData, cryptoData]);
+      }, [currentData, cryptoList, settings]);
 
-      const handleSmartMerge = () => {
-        let prevMonth = currentMonth - 1;
-        let prevYear = currentYear;
-        if (prevMonth === 0) {
-          prevMonth = 12;
-          prevYear -= 1;
+      // Scan DB for available months for import
+      const availableMonths = useMemo(() => {
+        const months = [];
+        Object.keys(db).sort((a,b) => b - a).forEach(y => {
+          Object.keys(db[y]).sort((a,b) => b - a).forEach(m => {
+            const data = db[y][m];
+            const hasData = CATEGORIES.some(cat => data[cat] && data[cat].length > 0);
+            if (hasData && !(y == currentYear && m == currentMonth)) {
+              months.push({ label: `${m.toString().padStart(2, '0')}/${y}`, value: `${y}-${m}` });
+            }
+          });
+        });
+        return months;
+      }, [db, currentYear, currentMonth]);
+
+      // Auto-select latest available month if importSource is empty
+      useEffect(() => {
+        if (availableMonths.length > 0 && !importSource) {
+          setImportSource(availableMonths[0].value);
         }
-        
-        const prevData = getMonthData(prevYear, prevMonth);
+      }, [availableMonths, importSource]);
+
+      const handleImport = () => {
+        if (!importSource) return;
+        const [y, m] = importSource.split('-');
+        const sourceData = getMonthData(parseInt(y), parseInt(m));
         const merged = { ...currentData };
         let hasChanges = false;
 
@@ -200,7 +226,7 @@
           const currentItems = [...(merged[cat] || [])];
           const currentNames = currentItems.map(i => i.name.toLowerCase());
           
-          (prevData[cat] || []).forEach(oldItem => {
+          (sourceData[cat] || []).forEach(oldItem => {
             if (!currentNames.includes(oldItem.name.toLowerCase())) {
               currentItems.push({ ...oldItem, val: 0, id: Date.now() + Math.random() }); 
               hasChanges = true;
@@ -222,7 +248,7 @@
 
       const exportJSON = () => {
         try {
-          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db));
+          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({ db, settings }));
           const downloadAnchorNode = document.createElement('a');
           downloadAnchorNode.setAttribute("href", dataStr);
           downloadAnchorNode.setAttribute("download", `liquid_wealth_export_${currentYear}.json`);
@@ -246,34 +272,33 @@
 
           <div className="relative z-10 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
             
-            {/* TICKER */}
-            <div className="flex justify-between items-center bg-white/30 dark:bg-black/30 backdrop-blur-md rounded-2xl p-3 border border-white/20 dark:border-white/10 shadow-lg text-sm font-medium">
-              <div className="flex gap-6 overflow-hidden items-center">
-                <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-2">
-                  <i className="ph-bold ph-trend-up text-lg"></i> L/W TACTICAL
-                </span>
-                {cryptoData.bitcoin ? (
-                  <div className="flex gap-4 animate-pulse">
-                    <span className="text-slate-700 dark:text-slate-300">
-                      BTC: {formatCurrency(cryptoData.bitcoin.eur)} <span className={(cryptoData.bitcoin.eur_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{((cryptoData.bitcoin.eur_24h_change || 0)).toFixed(2)}%</span>
-                    </span>
-                    <span className="text-slate-700 dark:text-slate-300 hidden sm:inline">
-                      ETH: {formatCurrency(cryptoData.ethereum?.eur)} <span className={(cryptoData.ethereum?.eur_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{((cryptoData.ethereum?.eur_24h_change || 0)).toFixed(2)}%</span>
-                    </span>
-                  </div>
-                ) : <span className="text-slate-500">Syncing Market Data...</span>}
+            {/* TOP 10 CRYPTO TICKER */}
+            <div className="bg-slate-900 text-white dark:bg-black/50 backdrop-blur-md rounded-2xl border border-slate-800 shadow-lg overflow-hidden flex items-center h-12">
+              <div className="px-4 font-bold text-blue-400 border-r border-slate-700 bg-slate-900 z-10 whitespace-nowrap h-full flex items-center shadow-[5px_0_10px_rgba(0,0,0,0.5)]">
+                <i className="ph-fill ph-trend-up mr-2"></i> TOP 10
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => setDarkMode(!darkMode)} className="p-1 hover:bg-white/20 rounded-lg transition">
-                  {darkMode ? <i className="ph-bold ph-sun text-lg"></i> : <i className="ph-bold ph-moon text-lg"></i>}
-                </button>
-                <button onClick={exportJSON} className="p-1 hover:bg-white/20 rounded-lg transition" title="Export JSON">
-                  <i className="ph-bold ph-download-simple text-lg"></i>
-                </button>
+              <div className="flex-1 overflow-hidden relative w-full h-full flex items-center">
+                {cryptoList.length > 0 ? (
+                  <div className="w-[200%] flex items-center animate-marquee absolute whitespace-nowrap">
+                    {/* Render list twice for smooth infinite scrolling */}
+                    {[...cryptoList, ...cryptoList].map((coin, i) => (
+                      <div key={i} className="inline-flex items-center mx-6 gap-2">
+                        <img src={coin.image} alt={coin.symbol} className="w-5 h-5 rounded-full" />
+                        <span className="font-bold uppercase">{coin.symbol}</span>
+                        <span>{formatCurrency(coin.current_price)}</span>
+                        <span className={coin.price_change_percentage_24h >= 0 ? 'text-green-400' : 'text-red-400'}>
+                          {coin.price_change_percentage_24h > 0 ? '+' : ''}{coin.price_change_percentage_24h?.toFixed(2)}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-4 text-slate-400 text-sm">Syncing Market Data via CoinGecko...</div>
+                )}
               </div>
             </div>
 
-            {/* NAV BAR */}
+            {/* NAV BAR & HEADER */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/40 dark:border-slate-700/50 shadow-xl">
               <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center">
                 {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
@@ -305,8 +330,54 @@
                     </button>
                   ))}
                 </div>
+
+                <div className="flex gap-2 bg-white/50 dark:bg-black/40 rounded-2xl p-2 ml-2">
+                  <button onClick={() => setDarkMode(!darkMode)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition">
+                    {darkMode ? <i className="ph-bold ph-sun text-lg"></i> : <i className="ph-bold ph-moon text-lg"></i>}
+                  </button>
+                  <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400">
+                    <i className="ph-bold ph-gear text-lg"></i>
+                  </button>
+                  <button onClick={exportJSON} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Export JSON">
+                    <i className="ph-bold ph-download-simple text-lg"></i>
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* SETTINGS MODAL */}
+            {showSettings && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md relative">
+                  <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-500 transition rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <i className="ph-bold ph-x text-xl"></i>
+                  </button>
+                  <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><i className="ph-fill ph-gear"></i> Tactical Settings</h2>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Notgroschen Ziel (Monate)</label>
+                      <input type="number" value={settings.emergencyMonths} onChange={(e) => setSettings({...settings, emergencyMonths: parseFloat(e.target.value) || 0})} className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
+                      <p className="text-xs text-slate-500 mt-1">Wie viele Monatsausgaben willst du als harten Puffer?</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">FIRE Entnahmerate (%)</label>
+                      <input type="number" step="0.1" value={settings.fireSWR} onChange={(e) => setSettings({...settings, fireSWR: parseFloat(e.target.value) || 0})} className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
+                      <p className="text-xs text-slate-500 mt-1">Standard ist 4% (Safe Withdrawal Rate).</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Erwarteter ROI p.a. (%)</label>
+                      <input type="number" step="0.1" value={settings.fireROI} onChange={(e) => setSettings({...settings, fireROI: parseFloat(e.target.value) || 0})} className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
+                      <p className="text-xs text-slate-500 mt-1">Deine konservative Rendite-Schätzung (z.B. 7%).</p>
+                    </div>
+                  </div>
+                  
+                  <button onClick={() => setShowSettings(false)} className="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/30">
+                    Speichern & Schließen
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* KPI BRIEFING */}
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -325,7 +396,7 @@
               </div>
 
               <KPICard title="FIRE Roadmap" value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub="Bis Freiheit" icon={<i className="ph-fill ph-fire text-xl"></i>} color="from-orange-400 to-red-500" />
-              <KPICard title="Runway" value={`${kpis.runwayMonths.toFixed(1)} Mon.`} sub="Survival Time" icon={<i className="ph-fill ph-target text-xl"></i>} color="from-slate-600 to-slate-800" />
+              <KPICard title="Daily Burn" value={formatCurrency(kpis.dailyBurnRate)} sub="Ausgaben pro Tag" icon={<i className="ph-fill ph-flame text-xl"></i>} color="from-slate-600 to-slate-800" />
             </div>
 
             {/* VIEWS */}
@@ -333,16 +404,34 @@
               
               {view === 'month' && (
                 <div className="flex flex-col gap-6">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
                     <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400">
                       Taktisches Board {currentMonth}/{currentYear}
                     </h2>
-                    <button onClick={handleSmartMerge} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/30 transition-all">
-                      <i className="ph-bold ph-copy"></i> Smart Merge
-                    </button>
+                    
+                    <div className="flex items-center gap-2 bg-white/50 dark:bg-black/30 p-2 rounded-2xl w-full xl:w-auto">
+                      <span className="text-sm text-slate-500 font-bold px-2 hidden sm:inline">Import aus:</span>
+                      <select 
+                        value={importSource} 
+                        onChange={(e) => setImportSource(e.target.value)}
+                        className="bg-white dark:bg-slate-800 text-sm font-bold p-2 rounded-xl outline-none cursor-pointer flex-1 xl:w-auto"
+                      >
+                        {availableMonths.length === 0 && <option value="">Keine Daten</option>}
+                        {availableMonths.map(m => (
+                          <option key={m.value} value={m.value}>{m.label}</option>
+                        ))}
+                      </select>
+                      <button 
+                        onClick={handleImport}
+                        disabled={!importSource}
+                        className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <i className="ph-bold ph-download-simple"></i> Copy
+                      </button>
+                    </div>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
                     <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" />
                     <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" />
                     <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={currentData.invest.reduce((a,b)=>a+(b.recurring?b.val:0),0)} ratio={kpis.incRec > 0 ? (currentData.invest.reduce((a,b)=>a+(b.recurring?b.val:0),0) / kpis.incRec * 100).toFixed(0) : 0} title="Investments" />
@@ -443,21 +532,22 @@
             ))}
           </div>
 
-          <form onSubmit={addItem} className="mt-auto flex gap-2 pt-2">
+          {/* FIX: Hard Grid Layout instead of flex gap to prevent overlap */}
+          <form onSubmit={addItem} className="mt-auto grid grid-cols-[1fr_5rem_3rem] gap-2 pt-2">
             <input 
               placeholder="Name..." 
               value={newItemName} 
               onChange={e => setNewItemName(e.target.value)}
-              className="flex-1 bg-white/50 dark:bg-black/40 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700"
+              className="bg-white/50 dark:bg-black/40 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700 w-full"
             />
             <input 
               type="number" 
               placeholder="€" 
               value={newItemVal} 
               onChange={e => setNewItemVal(e.target.value)}
-              className="w-20 bg-white/50 dark:bg-black/40 rounded-lg px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700"
+              className="bg-white/50 dark:bg-black/40 rounded-lg px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700 w-full"
             />
-            <button type="submit" className="bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 p-2 rounded-lg hover:scale-105 transition-transform flex items-center justify-center">
+            <button type="submit" className="bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:scale-105 transition-transform flex items-center justify-center w-full">
               <i className="ph-bold ph-plus text-lg"></i>
             </button>
           </form>
@@ -469,6 +559,7 @@
       const allocChartRef = useRef(null);
       const incChartRef = useRef(null);
       const expChartRef = useRef(null);
+      const assetChartRef = useRef(null);
 
       useEffect(() => {
         if (!window.Chart) return;
@@ -476,10 +567,12 @@
         let allocChartInst = null;
         let incChartInst = null;
         let expChartInst = null;
+        let assetChartInst = null;
 
         const createDonut = (ctx, items, colorScheme) => {
           if (!ctx) return null;
           const sorted = [...(items || [])].filter(i => i.val > 0).sort((a,b) => b.val - a.val);
+          if(sorted.length === 0) return null;
           
           return new window.Chart(ctx, {
             type: 'doughnut',
@@ -507,6 +600,7 @@
         
         if (incChartRef.current) incChartInst = createDonut(incChartRef.current, data.income, colors);
         if (expChartRef.current) expChartInst = createDonut(expChartRef.current, data.expenses, colors.slice().reverse());
+        if (assetChartRef.current) assetChartInst = createDonut(assetChartRef.current, data.assets, ['#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#f43f5e']);
 
         if (allocChartRef.current) {
           const incTotal = (data.income || []).reduce((a,b)=>a+b.val,0);
@@ -538,18 +632,29 @@
           if (incChartInst) incChartInst.destroy();
           if (expChartInst) expChartInst.destroy();
           if (allocChartInst) allocChartInst.destroy();
+          if (assetChartInst) assetChartInst.destroy();
         };
       }, [data]);
 
       return (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
           <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-            <h3 className="text-xl font-bold mb-4">Portfolio Intelligence</h3>
-            <div className="w-full max-w-[250px] aspect-square relative">
+            <h3 className="text-xl font-bold mb-4">Cashflow Intelligence</h3>
+            <div className="w-full max-w-[200px] aspect-square relative">
                <canvas ref={allocChartRef}></canvas>
                <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-[-20px]">
                  <span className="text-xs text-slate-500">Income</span>
                  <span className="font-bold text-lg">{formatCurrency((data.income || []).reduce((a,b)=>a+b.val,0))}</span>
+               </div>
+            </div>
+          </div>
+          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
+            <h3 className="text-xl font-bold mb-4">Asset Allocation</h3>
+            <div className="w-full max-w-[200px] aspect-square relative">
+               <canvas ref={assetChartRef}></canvas>
+               <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-[-20px]">
+                 <span className="text-xs text-slate-500">Net Worth</span>
+                 <span className="font-bold text-lg">{formatCurrency((data.assets || []).reduce((a,b)=>a+b.val,0))}</span>
                </div>
             </div>
           </div>
