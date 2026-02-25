@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Liquid Wealth Tactical Engine</title>
 
+  <!-- Modern Fintech Font: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
   <!-- Tailwind CSS via CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -12,7 +17,7 @@
       darkMode: 'class',
       theme: {
         extend: {
-          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] },
           animation: {
             'marquee': 'marquee 40s linear infinite',
           },
@@ -37,7 +42,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
-    body { font-family: 'Inter', sans-serif; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
     .custom-scrollbar::-webkit-scrollbar { width: 6px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
@@ -259,7 +264,8 @@
           
           (sourceData[cat] || []).forEach(oldItem => {
             if (!currentNames.includes(oldItem.name.toLowerCase())) {
-              currentItems.push({ ...oldItem, val: 0, id: Date.now() + Math.random() }); 
+              // FIX: Nimmt jetzt alle alten Werte direkt mit, keine genullten Felder mehr!
+              currentItems.push({ ...oldItem, id: Date.now() + Math.random() }); 
               hasChanges = true;
             }
           });
@@ -304,7 +310,7 @@
           <div className="relative z-10 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
             
             {/* TOP 10 CRYPTO TICKER */}
-            <div className="bg-slate-900 text-white dark:bg-black/50 backdrop-blur-md rounded-2xl border border-slate-800 shadow-lg overflow-hidden flex items-center h-12">
+            <div className="bg-slate-900 text-white dark:bg-black/50 backdrop-blur-md rounded-2xl border border-slate-800 shadow-lg overflow-hidden flex items-center h-12" title="Live-Daten der Top 10 Kryptowährungen nach Marktkapitalisierung via CoinGecko.">
               <div className="px-4 font-bold text-blue-400 border-r border-slate-700 bg-slate-900 z-10 whitespace-nowrap h-full flex items-center shadow-[5px_0_10px_rgba(0,0,0,0.5)]">
                 <i className="ph-fill ph-trend-up mr-2"></i> TOP 10
               </div>
@@ -330,7 +336,7 @@
 
             {/* NAV BAR & HEADER */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/40 dark:border-slate-700/50 shadow-xl">
-              <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center">
+              <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center" title="Wähle den Monat aus, den du analysieren oder bearbeiten möchtest.">
                 {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
                   <button 
                     key={m}
@@ -343,13 +349,13 @@
               </div>
               
               <div className="flex items-center gap-4 flex-wrap justify-center">
-                <div className="flex items-center bg-white/50 dark:bg-black/40 rounded-2xl p-1">
+                <div className="flex items-center bg-white/50 dark:bg-black/40 rounded-2xl p-1" title="Wechsle das aktive Jahr für deine Daten und Auswertungen.">
                   <button onClick={() => setCurrentYear(y => y - 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><i className="ph-bold ph-caret-left text-lg"></i></button>
                   <span className="px-4 font-bold text-lg">{currentYear}</span>
                   <button onClick={() => setCurrentYear(y => y + 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><i className="ph-bold ph-caret-right text-lg"></i></button>
                 </div>
                 
-                <div className="flex bg-white/50 dark:bg-black/40 rounded-2xl p-1">
+                <div className="flex bg-white/50 dark:bg-black/40 rounded-2xl p-1" title="Wechsle zwischen Eingabe (Month), Portfolio-Auswertung (Analyse) und Jahresübersicht (Year).">
                   {['month', 'analyse', 'year'].map(v => (
                     <button 
                       key={v}
@@ -362,13 +368,13 @@
                 </div>
 
                 <div className="flex gap-2 bg-white/50 dark:bg-black/40 rounded-2xl p-2 ml-2">
-                  <button onClick={() => setDarkMode(!darkMode)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition">
+                  <button onClick={() => setDarkMode(!darkMode)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition" title="Wechselt zwischen Light- und Darkmode (OLED-optimiert).">
                     {darkMode ? <i className="ph-bold ph-sun text-lg"></i> : <i className="ph-bold ph-moon text-lg"></i>}
                   </button>
-                  <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400">
+                  <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Öffnet die taktischen Einstellungen für FIRE-Ziele und Notgroschen.">
                     <i className="ph-bold ph-gear text-lg"></i>
                   </button>
-                  <button onClick={exportJSON} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Export JSON">
+                  <button onClick={exportJSON} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Erstellt ein lokales JSON-Backup all deiner Finanzdaten.">
                     <i className="ph-bold ph-download-simple text-lg"></i>
                   </button>
                 </div>
@@ -411,9 +417,9 @@
 
             {/* KPI BRIEFING GRID */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
-              <KPICard title="Net Worth" value={formatCurrency(kpis.netWorth)} sub={`≈ ${kpis.btcEq} BTC`} icon={<i className="ph-fill ph-wallet text-xl"></i>} color="from-blue-500 to-indigo-500" />
+              <KPICard title="Net Worth" tooltip="Die absolute Summe all deiner Vermögenswerte (Assets). Dein finanzieller Fußabdruck." value={formatCurrency(kpis.netWorth)} sub={`≈ ${kpis.btcEq} BTC`} icon={<i className="ph-fill ph-wallet text-xl"></i>} color="from-blue-500 to-indigo-500" />
               
-              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group">
+              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group" title="Dein prozentualer Fortschritt zum nächsten großen, logischen Vermögensziel (10k, 50k, 100k, 1M, etc.).">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Next Milestone</span>
                   <i className="ph-fill ph-flag-checkered text-xl text-blue-500"></i>
@@ -423,10 +429,10 @@
                 <div className="absolute bottom-0 left-0 h-1 bg-blue-500 transition-all duration-1000" style={{ width: `${Math.max(0, Math.min(100, kpis.milestoneProgress))}%` }}></div>
               </div>
 
-              <KPICard title="Cashflow" value={formatCurrency(kpis.cashflow)} sub={`Sparquote: ${kpis.savingsRate.toFixed(1)}%`} icon={<i className="ph-bold ph-arrows-clockwise text-xl"></i>} color={kpis.cashflow >= 0 ? "from-emerald-400 to-teal-500" : "from-red-400 to-rose-500"} />
-              <KPICard title="Restbudget" value={formatCurrency(kpis.restBudget)} sub="Living Buffer" icon={<i className="ph-fill ph-piggy-bank text-xl"></i>} color="from-purple-500 to-fuchsia-500" />
+              <KPICard title="Cashflow" tooltip="Wiederkehrendes Einkommen minus wiederkehrende Ausgaben. Das Kapital, das dir monatlich neu zum Investieren zur Verfügung steht." value={formatCurrency(kpis.cashflow)} sub={`Sparquote: ${kpis.savingsRate.toFixed(1)}%`} icon={<i className="ph-bold ph-arrows-clockwise text-xl"></i>} color={kpis.cashflow >= 0 ? "from-emerald-400 to-teal-500" : "from-red-400 to-rose-500"} />
+              <KPICard title="Restbudget" tooltip="Was dir nach Abzug aller Fixkosten und Investments zum reinen Konsum (Leben) in diesem Monat übrig bleibt." value={formatCurrency(kpis.restBudget)} sub="Living Buffer" icon={<i className="ph-fill ph-piggy-bank text-xl"></i>} color="from-purple-500 to-fuchsia-500" />
               
-              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group">
+              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group" title="Dein Sicherheitspuffer. Misst, wie viel Prozent deines eingestellten Notgroschen-Ziels (basierend auf deinen Fixkosten) du bereits als Cash-Asset hast.">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Notgroschen</span>
                   <i className="ph-fill ph-shield-warning text-xl text-yellow-500"></i>
@@ -436,9 +442,9 @@
                 <div className="absolute bottom-0 left-0 h-1 bg-yellow-500 transition-all duration-1000" style={{ width: `${Math.max(0, Math.min(100, kpis.emergencyProgress))}%` }}></div>
               </div>
 
-              <KPICard title="FIRE Roadmap" value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub="Bis Freiheit" icon={<i className="ph-fill ph-fire text-xl"></i>} color="from-orange-400 to-red-500" />
-              <KPICard title="Top Burner" value={formatCurrency(kpis.topExpense.val)} sub={kpis.topExpense.name} icon={<i className="ph-fill ph-warning-octagon text-xl"></i>} color="from-red-500 to-rose-600" />
-              <KPICard title="Daily Burn" value={formatCurrency(kpis.dailyBurnRate)} sub="Ausgaben pro Tag" icon={<i className="ph-fill ph-flame text-xl"></i>} color="from-slate-600 to-slate-800" />
+              <KPICard title="FIRE Roadmap" tooltip="Wie viele Jahre du brauchst, bis deine Investments durch Zinseszins und Sparrate deine monatlichen Fixkosten komplett decken." value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub="Bis Freiheit" icon={<i className="ph-fill ph-fire text-xl"></i>} color="from-orange-400 to-red-500" />
+              <KPICard title="Top Burner" tooltip="Dein absoluter Hauptkostentreiber (größter Ausgaben-Posten) in diesem speziellen Monat." value={formatCurrency(kpis.topExpense.val)} sub={kpis.topExpense.name} icon={<i className="ph-fill ph-warning-octagon text-xl"></i>} color="from-red-500 to-rose-600" />
+              <KPICard title="Daily Burn" tooltip="Deine statistischen Lebenshaltungskosten, heruntergebrochen auf einen einzigen Tag." value={formatCurrency(kpis.dailyBurnRate)} sub="Ausgaben pro Tag" icon={<i className="ph-fill ph-flame text-xl"></i>} color="from-slate-600 to-slate-800" />
             </div>
 
             {/* VIEWS */}
@@ -447,16 +453,17 @@
               {view === 'month' && (
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                    <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400">
+                    <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400" title="Verwalte hier Einnahmen, Ausgaben und dein Vermögen für den gewählten Monat.">
                       Taktisches Board {currentMonth}/{currentYear}
                     </h2>
                     
                     <div className="flex items-center gap-2 bg-white/50 dark:bg-black/30 p-2 rounded-2xl w-full xl:w-auto">
-                      <span className="text-sm text-slate-500 font-bold px-2 hidden sm:inline">Import aus:</span>
+                      <span className="text-sm text-slate-500 font-bold px-2 hidden sm:inline" title="Wähle den Monat, aus dem du die Struktur übernehmen willst.">Import aus:</span>
                       <select 
                         value={importSource} 
                         onChange={(e) => setImportSource(e.target.value)}
                         className="bg-white dark:bg-slate-800 text-sm font-bold p-2 rounded-xl outline-none cursor-pointer flex-1 xl:w-auto"
+                        title="Liste aller vergangenen Monate mit Daten."
                       >
                         {availableMonths.length === 0 && <option value="">Keine Daten</option>}
                         {availableMonths.map(m => (
@@ -467,6 +474,7 @@
                         onClick={handleImport}
                         disabled={!importSource}
                         className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Kopiert fehlende Posten INKLUSIVE Werte aus dem gewählten Monat in den aktuellen. Bestehende Einträge bleiben geschützt."
                       >
                         <i className="ph-bold ph-download-simple"></i> Copy
                       </button>
@@ -474,15 +482,15 @@
                   </div>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
-                    <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" />
-                    <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" />
-                    <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={kpis.invRec} ratio={kpis.incRec > 0 ? (kpis.invRec / kpis.incRec * 100).toFixed(0) : 0} title="Investments" />
-                    <CategoryColumn name="assets" data={currentData.assets} update={(d) => updateMonthData(currentYear, currentMonth, 'assets', d)} totalRec={kpis.netWorth} ratio="--" title="Assets" isAsset />
+                    <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" tooltip="Alle Geldflüsse, die dir zur Verfügung stehen. Setze Gehalt auf 'Recur'." />
+                    <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" tooltip="Dein Kapitalabfluss. Nur als 'Recur' markierte Ausgaben zählen zur Burn-Rate." />
+                    <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={kpis.invRec} ratio={kpis.incRec > 0 ? (kpis.invRec / kpis.incRec * 100).toFixed(0) : 0} title="Investments" tooltip="Geld, das du diesen Monat anlegst, damit es für dich arbeitet." />
+                    <CategoryColumn name="assets" data={currentData.assets} update={(d) => updateMonthData(currentYear, currentMonth, 'assets', d)} totalRec={kpis.netWorth} ratio="--" title="Assets" isAsset tooltip="Stichtags-Bewertung deines gesamten Besitzes (Krypto, ETF, Cash, Immos)." />
                   </div>
                 </div>
               )}
 
-              {view === 'analyse' && <AnalyseView data={currentData} kpis={kpis} settings={settings} calculateFIRE={calculateFIRE} />}
+              {view === 'analyse' && <AnalyseView data={currentData} kpis={kpis} settings={settings} calculateFIRE={calculateFIRE} darkMode={darkMode} />}
               {view === 'year' && <YearView db={db} year={currentYear} />}
               
             </div>
@@ -492,9 +500,9 @@
     }
 
     // --- SUB-COMPONENTS ---
-    function KPICard({ title, value, sub, icon, color }) {
+    function KPICard({ title, value, sub, icon, color, tooltip }) {
       return (
-        <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between group hover:scale-[1.02] transition-transform">
+        <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between group hover:scale-[1.02] transition-transform" title={tooltip}>
           <div className="flex justify-between items-start mb-2">
             <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</span>
             <div className={`p-2 rounded-xl bg-gradient-to-br ${color} text-white shadow-lg opacity-80 group-hover:opacity-100 transition-opacity`}>
@@ -509,7 +517,7 @@
       );
     }
 
-    function CategoryColumn({ name, data, update, totalRec, ratio, title, isAsset = false }) {
+    function CategoryColumn({ name, data, update, totalRec, ratio, title, isAsset = false, tooltip }) {
       const safeData = data || [];
       const [newItemName, setNewItemName] = useState('');
       const [newItemVal, setNewItemVal] = useState('');
@@ -530,15 +538,15 @@
       const totalAll = safeData.reduce((a,b) => a + b.val, 0);
 
       return (
-        <div className="flex flex-col gap-3 bg-white/20 dark:bg-black/20 rounded-2xl p-4 border border-white/30 dark:border-white/5">
+        <div className="flex flex-col gap-3 bg-white/20 dark:bg-black/20 rounded-2xl p-4 border border-white/30 dark:border-white/5" title={tooltip}>
           <div className="flex justify-between items-end mb-2 border-b border-slate-300 dark:border-slate-700 pb-2">
             <div>
               <h3 className="font-bold text-lg capitalize">{title}</h3>
-              <div className="text-xs text-slate-500 dark:text-slate-400">
+              <div className="text-xs text-slate-500 dark:text-slate-400" title={isAsset ? "Die Summe aller eingetragenen Vermögenswerte." : "Summe aller Einträge, die als wiederkehrend ('Recur') markiert sind."}>
                 {isAsset ? 'Total:' : 'KPI Relevant:'} <span className="font-bold text-slate-800 dark:text-slate-200">{formatCurrency(isAsset ? totalAll : totalRec)}</span>
               </div>
             </div>
-            {!isAsset && <div className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded-lg">{ratio}% Ratio</div>}
+            {!isAsset && <div className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded-lg" title="Verhältnis dieser Kategorie zu deinen Gesamteinnahmen.">{ratio}% Ratio</div>}
           </div>
 
           <div className="flex-1 overflow-y-auto max-h-[400px] space-y-2 pr-1 custom-scrollbar">
@@ -549,8 +557,9 @@
                     value={item.name} 
                     onChange={(e) => updateItem(item.id, 'name', e.target.value)}
                     className="bg-transparent font-medium text-sm outline-none w-full"
+                    title="Bezeichnung bearbeiten"
                   />
-                  <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Eintrag löschen">
                     <i className="ph-bold ph-trash"></i>
                   </button>
                 </div>
@@ -560,11 +569,13 @@
                     value={item.val} 
                     onChange={(e) => updateItem(item.id, 'val', parseFloat(e.target.value) || 0)}
                     className="bg-transparent font-bold outline-none w-24 text-blue-600 dark:text-blue-400"
+                    title="Betrag in Euro bearbeiten"
                   />
                   {!isAsset && (
                     <button 
                       onClick={() => toggleRecurring(item.id)} 
                       className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${item.recurring ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
+                      title={item.recurring ? "Dies ist ein wiederkehrender Posten und zählt zu den KPIs." : "Dies ist ein Einmal-Posten und verfälscht deine Strategie-KPIs nicht."}
                     >
                       {item.recurring ? 'Recur' : 'One-Off'}
                     </button>
@@ -574,7 +585,7 @@
             ))}
           </div>
 
-          <form onSubmit={addItem} className="mt-auto grid grid-cols-[1fr_5rem_3rem] gap-2 pt-2">
+          <form onSubmit={addItem} className="mt-auto grid grid-cols-[1fr_5rem_3rem] gap-2 pt-2" title="Füge einen neuen Posten hinzu">
             <input 
               placeholder="Name..." 
               value={newItemName} 
@@ -596,7 +607,7 @@
       );
     }
 
-    function AnalyseView({ data, kpis, settings, calculateFIRE }) {
+    function AnalyseView({ data, kpis, settings, calculateFIRE, darkMode }) {
       const allocChartRef = useRef(null);
       const incChartRef = useRef(null);
       const expChartRef = useRef(null);
@@ -618,6 +629,9 @@
         let expChartInst = null;
         let assetChartInst = null;
 
+        const legendColor = darkMode ? '#94a3b8' : '#475569';
+        const fontFamily = '"Plus Jakarta Sans", sans-serif';
+
         const createDonut = (ctx, items, colorScheme) => {
           if (!ctx) return null;
           const sorted = [...(items || [])].filter(i => i.val > 0).sort((a,b) => b.val - a.val);
@@ -636,9 +650,14 @@
             },
             options: {
               responsive: true,
-              cutout: '75%',
+              maintainAspectRatio: false,
+              cutout: '70%',
               plugins: {
-                legend: { display: false },
+                legend: { 
+                  display: true, 
+                  position: 'bottom',
+                  labels: { color: legendColor, font: { family: fontFamily, size: 11 }, boxWidth: 12, padding: 15 }
+                },
                 tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${formatCurrency(ctx.raw)}` } }
               }
             }
@@ -669,9 +688,14 @@
             },
             options: {
               responsive: true,
+              maintainAspectRatio: false,
               cutout: '60%',
               plugins: {
-                legend: { position: 'bottom', labels: { color: '#888' } },
+                legend: { 
+                  display: true, 
+                  position: 'bottom', 
+                  labels: { color: legendColor, font: { family: fontFamily, size: 11 }, boxWidth: 12, padding: 15 } 
+                },
               }
             }
           });
@@ -683,15 +707,15 @@
           if (allocChartInst) allocChartInst.destroy();
           if (assetChartInst) assetChartInst.destroy();
         };
-      }, [data]);
+      }, [data, darkMode]);
 
       return (
         <div className="flex flex-col gap-8">
           
           {/* TACTICAL SIMULATOR */}
-          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 shadow-xl">
+          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 shadow-xl" title="Simuliere, wie sich eine höhere Sparquote auf deine Dauer bis zur finanziellen Freiheit auswirkt.">
              <h3 className="text-2xl font-bold flex items-center gap-2 mb-2"><i className="ph-fill ph-flask text-blue-500"></i> Tactical FIRE Simulator</h3>
-             <p className="text-sm text-slate-500 mb-6">Was passiert, wenn du deine monatliche Sparrate aggressiv erhöhst? Teste den Hebel Effekt auf deine Lebenszeit.</p>
+             <p className="text-sm text-slate-500 mb-6">Was passiert, wenn du deine monatliche Sparrate aggressiv erhöhst? Teste den Hebel-Effekt auf deine Lebenszeit.</p>
              
              <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
                 <input 
@@ -702,6 +726,7 @@
                   value={simBoost} 
                   onChange={e => setSimBoost(Number(e.target.value))} 
                   className="flex-1 w-full md:w-auto" 
+                  title="Schiebe den Regler, um zusätzliches Investment-Kapital pro Monat zu simulieren."
                 />
                 <div className="font-black text-3xl w-40 text-right text-blue-600 dark:text-blue-400">
                   +{formatCurrency(simBoost)}
@@ -726,33 +751,40 @@
 
           {/* CHARTS */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-              <h3 className="text-xl font-bold mb-4">Cashflow Intelligence</h3>
-              <div className="w-full max-w-[200px] aspect-square relative">
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Zeigt, wie dein verdientes Geld zwischen Lebenshaltung (Konsum), Vermögensaufbau (Invest) und Rest-Liquidität aufgeteilt wird.">
+              <h3 className="text-xl font-bold mb-4 w-full text-center">Cashflow Intelligence</h3>
+              <div className="w-full flex-1 min-h-[250px] flex justify-center relative">
                  <canvas ref={allocChartRef}></canvas>
-                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-[-20px]">
+                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col pb-8">
                    <span className="text-xs text-slate-500">Income</span>
                    <span className="font-bold text-lg">{formatCurrency((data.income || []).reduce((a,b)=>a+b.val,0))}</span>
                  </div>
               </div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-              <h3 className="text-xl font-bold mb-4">Asset Allocation</h3>
-              <div className="w-full max-w-[200px] aspect-square relative">
+            
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Die Gewichtung und Verteilung deiner absoluten Vermögenswerte.">
+              <h3 className="text-xl font-bold mb-4 w-full text-center">Asset Allocation</h3>
+              <div className="w-full flex-1 min-h-[250px] flex justify-center relative">
                  <canvas ref={assetChartRef}></canvas>
-                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-[-20px]">
+                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col pb-8">
                    <span className="text-xs text-slate-500">Net Worth</span>
                    <span className="font-bold text-lg">{formatCurrency((data.assets || []).reduce((a,b)=>a+b.val,0))}</span>
                  </div>
               </div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-              <h3 className="text-xl font-bold mb-4">Income Split</h3>
-              <div className="w-full max-w-[200px] aspect-square"><canvas ref={incChartRef}></canvas></div>
+            
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Visuelle Aufschlüsselung deiner Einnahmequellen.">
+              <h3 className="text-xl font-bold mb-4 w-full text-center">Income Split</h3>
+              <div className="w-full flex-1 min-h-[250px] flex justify-center">
+                 <canvas ref={incChartRef}></canvas>
+              </div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-              <h3 className="text-xl font-bold mb-4">Expense Split</h3>
-              <div className="w-full max-w-[200px] aspect-square"><canvas ref={expChartRef}></canvas></div>
+            
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Visuelle Aufschlüsselung deiner Hauptkostenpunkte.">
+              <h3 className="text-xl font-bold mb-4 w-full text-center">Expense Split</h3>
+              <div className="w-full flex-1 min-h-[250px] flex justify-center">
+                 <canvas ref={expChartRef}></canvas>
+              </div>
             </div>
           </div>
 
@@ -809,6 +841,8 @@
       useEffect(() => {
         if (!window.Chart || !chartRef.current) return;
         
+        const fontFamily = '"Plus Jakarta Sans", sans-serif';
+
         const chartInst = new window.Chart(chartRef.current, {
           type: 'line',
           data: {
@@ -838,16 +872,16 @@
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: '#888' } } },
+            plugins: { legend: { labels: { color: '#888', font: { family: fontFamily } } } },
             scales: {
-              x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+              x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', font: { family: fontFamily } } },
               y: { 
                 type: 'linear', display: true, position: 'left',
-                grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' }
+                grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', font: { family: fontFamily } }
               },
               y1: {
                 type: 'linear', display: true, position: 'right',
-                grid: { drawOnChartArea: false }, ticks: { color: '#888' }
+                grid: { drawOnChartArea: false }, ticks: { color: '#888', font: { family: fontFamily } }
               }
             }
           }
@@ -859,27 +893,27 @@
       }, [stats]);
 
       return (
-        <div className="flex flex-col gap-6 h-full">
+        <div className="flex flex-col gap-6 h-full" title="Jahresauswertung und Verfolgung deines Vermögensaufbaus.">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl" title="Durchschnittliches monatliches Einkommen in diesem Jahr (YTD).">
               <div className="text-sm text-slate-500">Ø Income</div>
               <div className="text-xl font-bold">{formatCurrency(stats.avgInc)}</div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl" title="Durchschnittliche monatliche Ausgaben in diesem Jahr (YTD).">
               <div className="text-sm text-slate-500">Ø Expenses</div>
               <div className="text-xl font-bold">{formatCurrency(stats.avgExp)}</div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl" title="Durchschnittliches monatliches Investmentvolumen in diesem Jahr (YTD).">
               <div className="text-sm text-slate-500">Ø Invest</div>
               <div className="text-xl font-bold">{formatCurrency(stats.avgInv)}</div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl border border-blue-500/30">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl border border-blue-500/30" title="Durchschnittliche Sparquote des gesamten Jahreslaufes.">
               <div className="text-sm text-slate-500">Ø Sparquote</div>
               <div className="text-xl font-bold text-blue-500">{stats.avgSR.toFixed(1)}%</div>
             </div>
           </div>
 
-          <div className="flex-1 min-h-[300px] bg-white/10 dark:bg-black/10 rounded-3xl p-4 border border-white/20 dark:border-white/5">
+          <div className="flex-1 min-h-[300px] bg-white/10 dark:bg-black/10 rounded-3xl p-4 border border-white/20 dark:border-white/5" title="Historischer Verlauf: Dein Vermögen (Net Worth) vs. den produzierten Cashflow pro Monat.">
             <canvas ref={chartRef}></canvas>
           </div>
         </div>
