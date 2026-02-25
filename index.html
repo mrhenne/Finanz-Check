@@ -1,730 +1,698 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { 
-  Wallet, TrendingUp, PiggyBank, Target, Flame, 
-  ShieldAlert, Sun, Moon, Download, RefreshCw, Plus, Trash2, 
-  Copy, ChevronRight, ChevronLeft, AlertCircle 
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Liquid Wealth Tactical Engine</title>
 
-// --- CONFIG & CONSTANTS ---
-const STORAGE_KEY = 'lw_tactical_v16';
-const DEFAULT_YEAR = new Date().getFullYear();
-const DEFAULT_MONTH = new Date().getMonth() + 1;
-const CATEGORIES = ['income', 'expenses', 'invest', 'assets'];
-
-// --- CUSTOM HOOK: CHART.JS INJECTION (Sandbox-Safe) ---
-const useChartJs = () => {
-  const [status, setStatus] = useState({ loaded: false, failed: false });
-  
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if (window.Chart) {
-      setStatus({ loaded: true, failed: false });
-      return;
-    }
-    try {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/chart.js';
-      script.onload = () => setStatus({ loaded: true, failed: false });
-      script.onerror = () => setStatus({ loaded: false, failed: true });
-      document.head.appendChild(script);
-    } catch (e) {
-      setStatus({ loaded: false, failed: true });
-    }
-  }, []);
-  
-  return status;
-};
-
-// --- HELPER FUNCTIONS ---
-const formatCurrency = (val) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
-
-const getEmptyMonth = () => ({
-  income: [], expenses: [], invest: [], assets: []
-});
-
-const calculateFIRE = (assets, invest, expenses) => {
-  const target = expenses * 12 * 25; // 4% Rule
-  if (assets >= target) return 0;
-  if (invest <= 0 && assets <= 0) return 999;
-  
-  let current = assets;
-  let months = 0;
-  const monthlyRate = 0.07 / 12; // 7% annual ROI
-  
-  while (current < target && months < 600) { // Max 50 years
-    current = current * (1 + monthlyRate) + invest;
-    months++;
-  }
-  return months / 12;
-};
-
-// Safe LocalStorage Handlers
-const loadState = () => {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const saved = window.localStorage.getItem(STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.warn("L/W Tactical: LocalStorage blockiert (Sandbox Environment). Nutze Memory-State.");
-  }
-  return { [DEFAULT_YEAR]: { [DEFAULT_MONTH]: getEmptyMonth() } };
-};
-
-const saveState = (db) => {
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
-    }
-  } catch (e) {
-    // Fail silently in restricted environments
-  }
-};
-
-// --- MAIN APP COMPONENT ---
-export default function App() {
-  const chartJs = useChartJs();
-  
-  // --- STATE INITIALIZATION ---
-  const [db, setDb] = useState(loadState());
-  const [currentYear, setCurrentYear] = useState(DEFAULT_YEAR);
-  const [currentMonth, setCurrentMonth] = useState(DEFAULT_MONTH);
-  const [view, setView] = useState('month'); // month, analyse, year
-  const [darkMode, setDarkMode] = useState(true);
-  const [cryptoData, setCryptoData] = useState({ bitcoin: null, ethereum: null, solana: null });
-  const [isClient, setIsClient] = useState(false);
-
-  // --- EFFECTS ---
-  useEffect(() => {
-    setIsClient(true);
-    try {
-      if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
-        setDarkMode(false);
-      }
-    } catch (e) {}
-  }, []);
-
-  useEffect(() => {
-    if (!isClient) return;
-    saveState(db);
-  }, [db, isClient]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    if (darkMode) document.documentElement.classList.add('dark');
-    else document.documentElement.classList.remove('dark');
-  }, [darkMode]);
-
-  // Crypto Fetcher
-  useEffect(() => {
-    const fetchCrypto = async () => {
-      try {
-        const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=eur&include_24hr_change=true');
-        const data = await res.json();
-        if (data && data.bitcoin) {
-          setCryptoData(data);
-        }
-      } catch (err) {
-        console.warn("Crypto API offline oder Limit erreicht.");
-      }
-    };
-    fetchCrypto();
-    const interval = setInterval(fetchCrypto, 60000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // --- DATA ACCESSORS ---
-  const getMonthData = useCallback((year, month) => {
-    return db[year]?.[month] || getEmptyMonth();
-  }, [db]);
-
-  const updateMonthData = (year, month, category, newData) => {
-    setDb(prev => ({
-      ...prev,
-      [year]: {
-        ...(prev[year] || {}),
-        [month]: {
-          ...(prev[year]?.[month] || getEmptyMonth()),
-          [category]: newData
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] }
         }
       }
-    }));
-  };
-
-  // --- KPI CALCULATIONS ---
-  const currentData = getMonthData(currentYear, currentMonth);
-  
-  const kpis = useMemo(() => {
-    const sumCat = (cat, onlyRecurring = false) => 
-      (cat || []).reduce((acc, item) => acc + (onlyRecurring ? (item.recurring ? item.val : 0) : item.val), 0);
-
-    const incRec = sumCat(currentData.income, true);
-    const expRec = sumCat(currentData.expenses, true);
-    const invRec = sumCat(currentData.invest, true);
-    const assTot = sumCat(currentData.assets, false); 
-    
-    const cashflow = incRec - expRec;
-    const savingsRate = incRec > 0 ? ((incRec - expRec) / incRec) * 100 : 0;
-    const restBudget = cashflow - invRec;
-    
-    const emergencyTarget = expRec * 6;
-    const emergencyProgress = emergencyTarget > 0 ? Math.min(100, (assTot / emergencyTarget) * 100) : 0;
-    
-    const fireYears = calculateFIRE(assTot, invRec, expRec);
-    const runwayMonths = expRec > 0 ? (assTot / expRec) : 0;
-    
-    const btcEq = cryptoData?.bitcoin?.eur ? (assTot / cryptoData.bitcoin.eur).toFixed(2) : 0;
-
-    return {
-      netWorth: assTot,
-      btcEq,
-      cashflow,
-      savingsRate,
-      restBudget,
-      emergencyProgress,
-      emergencyTarget,
-      fireYears,
-      runwayMonths,
-      expRec,
-      incRec
-    };
-  }, [currentData, cryptoData]);
-
-  // --- ACTIONS ---
-  const handleSmartMerge = () => {
-    let prevMonth = currentMonth - 1;
-    let prevYear = currentYear;
-    if (prevMonth === 0) {
-      prevMonth = 12;
-      prevYear -= 1;
     }
-    
-    const prevData = getMonthData(prevYear, prevMonth);
-    const merged = { ...currentData };
-    let hasChanges = false;
+  </script>
 
-    CATEGORIES.forEach(cat => {
-      const currentItems = [...(merged[cat] || [])];
-      const currentNames = currentItems.map(i => i.name.toLowerCase());
-      
-      (prevData[cat] || []).forEach(oldItem => {
-        if (!currentNames.includes(oldItem.name.toLowerCase())) {
-          currentItems.push({ ...oldItem, val: 0, id: Date.now() + Math.random() }); 
-          hasChanges = true;
-        }
-      });
-      merged[cat] = currentItems;
+  <!-- Phosphor Icons (No-Build Alternative to Lucide) -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+
+  <!-- React & ReactDOM via CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel (Translates JSX in the browser) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Chart.js via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Custom Scrollbar -->
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
+    .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.5); }
+  </style>
+</head>
+<body class="antialiased bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300">
+
+  <div id="root"></div>
+
+  <!-- BROWSER REACT CODE -->
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+    // --- CONFIG & CONSTANTS ---
+    const STORAGE_KEY = 'lw_tactical_v16_github';
+    const DEFAULT_YEAR = new Date().getFullYear();
+    const DEFAULT_MONTH = new Date().getMonth() + 1;
+    const CATEGORIES = ['income', 'expenses', 'invest', 'assets'];
+
+    // --- HELPER FUNCTIONS ---
+    const formatCurrency = (val) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val || 0);
+
+    const getEmptyMonth = () => ({
+      income: [], expenses: [], invest: [], assets: []
     });
 
-    if (hasChanges) {
-      setDb(prev => ({
-        ...prev,
-        [currentYear]: {
-          ...(prev[currentYear] || {}),
-          [currentMonth]: merged
+    const calculateFIRE = (assets, invest, expenses) => {
+      const target = expenses * 12 * 25; // 4% Rule
+      if (assets >= target) return 0;
+      if (invest <= 0 && assets <= 0) return 999;
+      
+      let current = assets;
+      let months = 0;
+      const monthlyRate = 0.07 / 12; // 7% annual ROI
+      
+      while (current < target && months < 600) { 
+        current = current * (1 + monthlyRate) + invest;
+        months++;
+      }
+      return months / 12;
+    };
+
+    // Safe LocalStorage Handlers
+    const loadState = () => {
+      try {
+        const saved = window.localStorage.getItem(STORAGE_KEY);
+        if (saved) return JSON.parse(saved);
+      } catch (e) {
+        console.warn("L/W Tactical: LocalStorage blockiert. Nutze Memory-State.");
+      }
+      return { [DEFAULT_YEAR]: { [DEFAULT_MONTH]: getEmptyMonth() } };
+    };
+
+    const saveState = (db) => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db));
+      } catch (e) {}
+    };
+
+    // --- MAIN APP COMPONENT ---
+    function App() {
+      const [db, setDb] = useState(loadState());
+      const [currentYear, setCurrentYear] = useState(DEFAULT_YEAR);
+      const [currentMonth, setCurrentMonth] = useState(DEFAULT_MONTH);
+      const [view, setView] = useState('month'); 
+      const [darkMode, setDarkMode] = useState(true);
+      const [cryptoData, setCryptoData] = useState({ bitcoin: null, ethereum: null, solana: null });
+      const [isClient, setIsClient] = useState(false);
+
+      useEffect(() => {
+        setIsClient(true);
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+          setDarkMode(false);
         }
-      }));
-    }
-  };
+      }, []);
 
-  const exportJSON = () => {
-    try {
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db));
-      const downloadAnchorNode = document.createElement('a');
-      downloadAnchorNode.setAttribute("href", dataStr);
-      downloadAnchorNode.setAttribute("download", `liquid_wealth_export_${currentYear}.json`);
-      document.body.appendChild(downloadAnchorNode);
-      downloadAnchorNode.click();
-      downloadAnchorNode.remove();
-    } catch (e) {
-      alert("Export im aktuellen Browser-Modus blockiert.");
-    }
-  };
+      useEffect(() => {
+        if (!isClient) return;
+        saveState(db);
+      }, [db, isClient]);
 
-  if (!isClient) return <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center font-bold">Initialisiere Liquid Wealth Engine...</div>;
+      useEffect(() => {
+        if (darkMode) document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }, [darkMode]);
 
-  return (
-    <div className={`min-h-screen font-sans transition-colors duration-300 ${darkMode ? 'dark bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} overflow-x-hidden relative`}>
-      {/* BACKGROUND LIQUID EFFECTS */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/20 dark:bg-blue-600/20 rounded-full blur-[120px]"></div>
-        <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-purple-500/20 dark:bg-indigo-600/20 rounded-full blur-[150px]"></div>
-      </div>
+      useEffect(() => {
+        const fetchCrypto = async () => {
+          try {
+            const res = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=eur&include_24hr_change=true');
+            const data = await res.json();
+            if (data && data.bitcoin) {
+              setCryptoData(data);
+            }
+          } catch (err) {
+            console.warn("Crypto API offline.");
+          }
+        };
+        fetchCrypto();
+        const interval = setInterval(fetchCrypto, 60000);
+        return () => clearInterval(interval);
+      }, []);
 
-      <div className="relative z-10 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+      const getMonthData = useCallback((year, month) => {
+        return db[year]?.[month] || getEmptyMonth();
+      }, [db]);
+
+      const updateMonthData = (year, month, category, newData) => {
+        setDb(prev => ({
+          ...prev,
+          [year]: {
+            ...(prev[year] || {}),
+            [month]: {
+              ...(prev[year]?.[month] || getEmptyMonth()),
+              [category]: newData
+            }
+          }
+        }));
+      };
+
+      const currentData = getMonthData(currentYear, currentMonth);
+      
+      const kpis = useMemo(() => {
+        const sumCat = (cat, onlyRecurring = false) => 
+          (cat || []).reduce((acc, item) => acc + (onlyRecurring ? (item.recurring ? item.val : 0) : item.val), 0);
+
+        const incRec = sumCat(currentData.income, true);
+        const expRec = sumCat(currentData.expenses, true);
+        const invRec = sumCat(currentData.invest, true);
+        const assTot = sumCat(currentData.assets, false); 
         
-        {/* --- TICKER --- */}
-        <div className="flex justify-between items-center bg-white/30 dark:bg-black/30 backdrop-blur-md rounded-2xl p-3 border border-white/20 dark:border-white/10 shadow-lg text-sm font-medium">
-          <div className="flex gap-6 overflow-hidden">
-            <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-2">
-              <TrendingUp size={16} /> L/W TACTICAL
-            </span>
-            {cryptoData.bitcoin ? (
-              <div className="flex gap-4 animate-pulse">
-                <span className="text-slate-700 dark:text-slate-300">
-                  BTC: {formatCurrency(cryptoData.bitcoin.eur)} <span className={(cryptoData.bitcoin.eur_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{((cryptoData.bitcoin.eur_24h_change || 0)).toFixed(2)}%</span>
-                </span>
-                <span className="text-slate-700 dark:text-slate-300">
-                  ETH: {formatCurrency(cryptoData.ethereum?.eur)} <span className={(cryptoData.ethereum?.eur_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{((cryptoData.ethereum?.eur_24h_change || 0)).toFixed(2)}%</span>
-                </span>
-              </div>
-            ) : <span className="text-slate-500">Syncing Market Data...</span>}
-          </div>
-          <div className="flex gap-3">
-            <button onClick={() => setDarkMode(!darkMode)} className="p-1 hover:bg-white/20 rounded-lg transition">
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button onClick={exportJSON} className="p-1 hover:bg-white/20 rounded-lg transition" title="Export JSON">
-              <Download size={18} />
-            </button>
-          </div>
-        </div>
+        const cashflow = incRec - expRec;
+        const savingsRate = incRec > 0 ? ((incRec - expRec) / incRec) * 100 : 0;
+        const restBudget = cashflow - invRec;
+        
+        const emergencyTarget = expRec * 6;
+        const emergencyProgress = emergencyTarget > 0 ? Math.min(100, (assTot / emergencyTarget) * 100) : 0;
+        
+        const fireYears = calculateFIRE(assTot, invRec, expRec);
+        const runwayMonths = expRec > 0 ? (assTot / expRec) : 0;
+        
+        const btcEq = cryptoData?.bitcoin?.eur ? (assTot / cryptoData.bitcoin.eur).toFixed(2) : 0;
 
-        {/* --- NAVIGATION & TACTICAL BAR --- */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/40 dark:border-slate-700/50 shadow-xl">
-          <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center">
-            {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
-              <button 
-                key={m}
-                onClick={() => setCurrentMonth(m)}
-                className={`w-10 h-10 rounded-xl text-sm font-semibold transition-all ${currentMonth === m ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'hover:bg-white/50 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400'}`}
-              >
-                {new Date(2000, m - 1, 1).toLocaleString('de-DE', { month: 'short' })}
-              </button>
-            ))}
-          </div>
+        return {
+          netWorth: assTot, btcEq, cashflow, savingsRate, restBudget, 
+          emergencyProgress, emergencyTarget, fireYears, runwayMonths, expRec, incRec
+        };
+      }, [currentData, cryptoData]);
+
+      const handleSmartMerge = () => {
+        let prevMonth = currentMonth - 1;
+        let prevYear = currentYear;
+        if (prevMonth === 0) {
+          prevMonth = 12;
+          prevYear -= 1;
+        }
+        
+        const prevData = getMonthData(prevYear, prevMonth);
+        const merged = { ...currentData };
+        let hasChanges = false;
+
+        CATEGORIES.forEach(cat => {
+          const currentItems = [...(merged[cat] || [])];
+          const currentNames = currentItems.map(i => i.name.toLowerCase());
           
-          <div className="flex items-center gap-4 flex-wrap justify-center">
-            <div className="flex items-center bg-white/50 dark:bg-black/40 rounded-2xl p-1">
-              <button onClick={() => setCurrentYear(y => y - 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><ChevronLeft size={20}/></button>
-              <span className="px-4 font-bold text-lg">{currentYear}</span>
-              <button onClick={() => setCurrentYear(y => y + 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><ChevronRight size={20}/></button>
-            </div>
+          (prevData[cat] || []).forEach(oldItem => {
+            if (!currentNames.includes(oldItem.name.toLowerCase())) {
+              currentItems.push({ ...oldItem, val: 0, id: Date.now() + Math.random() }); 
+              hasChanges = true;
+            }
+          });
+          merged[cat] = currentItems;
+        });
+
+        if (hasChanges) {
+          setDb(prev => ({
+            ...prev,
+            [currentYear]: {
+              ...(prev[currentYear] || {}),
+              [currentMonth]: merged
+            }
+          }));
+        }
+      };
+
+      const exportJSON = () => {
+        try {
+          const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(db));
+          const downloadAnchorNode = document.createElement('a');
+          downloadAnchorNode.setAttribute("href", dataStr);
+          downloadAnchorNode.setAttribute("download", `liquid_wealth_export_${currentYear}.json`);
+          document.body.appendChild(downloadAnchorNode);
+          downloadAnchorNode.click();
+          downloadAnchorNode.remove();
+        } catch (e) {
+          alert("Export blockiert.");
+        }
+      };
+
+      if (!isClient) return <div className="min-h-screen flex items-center justify-center font-bold">Lade Engine...</div>;
+
+      return (
+        <div className="relative min-h-screen overflow-x-hidden">
+          {/* LIQUID GLASS BACKGROUND */}
+          <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+            <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-500/20 dark:bg-blue-600/20 rounded-full blur-[120px]"></div>
+            <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-purple-500/20 dark:bg-indigo-600/20 rounded-full blur-[150px]"></div>
+          </div>
+
+          <div className="relative z-10 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
             
-            <div className="flex bg-white/50 dark:bg-black/40 rounded-2xl p-1">
-              {['month', 'analyse', 'year'].map(v => (
-                <button 
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`px-4 py-2 rounded-xl text-sm font-bold capitalize transition-all ${view === v ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'text-slate-600 dark:text-slate-400 hover:bg-white/30 dark:hover:bg-white/10'}`}
-                >
-                  {v}
+            {/* TICKER */}
+            <div className="flex justify-between items-center bg-white/30 dark:bg-black/30 backdrop-blur-md rounded-2xl p-3 border border-white/20 dark:border-white/10 shadow-lg text-sm font-medium">
+              <div className="flex gap-6 overflow-hidden items-center">
+                <span className="text-blue-600 dark:text-blue-400 font-bold flex items-center gap-2">
+                  <i className="ph-bold ph-trend-up text-lg"></i> L/W TACTICAL
+                </span>
+                {cryptoData.bitcoin ? (
+                  <div className="flex gap-4 animate-pulse">
+                    <span className="text-slate-700 dark:text-slate-300">
+                      BTC: {formatCurrency(cryptoData.bitcoin.eur)} <span className={(cryptoData.bitcoin.eur_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{((cryptoData.bitcoin.eur_24h_change || 0)).toFixed(2)}%</span>
+                    </span>
+                    <span className="text-slate-700 dark:text-slate-300 hidden sm:inline">
+                      ETH: {formatCurrency(cryptoData.ethereum?.eur)} <span className={(cryptoData.ethereum?.eur_24h_change || 0) >= 0 ? 'text-green-500' : 'text-red-500'}>{((cryptoData.ethereum?.eur_24h_change || 0)).toFixed(2)}%</span>
+                    </span>
+                  </div>
+                ) : <span className="text-slate-500">Syncing Market Data...</span>}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setDarkMode(!darkMode)} className="p-1 hover:bg-white/20 rounded-lg transition">
+                  {darkMode ? <i className="ph-bold ph-sun text-lg"></i> : <i className="ph-bold ph-moon text-lg"></i>}
                 </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* --- KPI BRIEFING --- */}
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-          <KPICard title="Net Worth" value={formatCurrency(kpis.netWorth)} sub={`≈ ${kpis.btcEq} BTC`} icon={<Wallet />} color="from-blue-500 to-indigo-500" />
-          <KPICard title="Cashflow" value={formatCurrency(kpis.cashflow)} sub={`Sparquote: ${kpis.savingsRate.toFixed(1)}%`} icon={<RefreshCw />} color={kpis.cashflow >= 0 ? "from-emerald-400 to-teal-500" : "from-red-400 to-rose-500"} />
-          <KPICard title="Restbudget" value={formatCurrency(kpis.restBudget)} sub="Living Buffer" icon={<PiggyBank />} color="from-purple-500 to-fuchsia-500" />
-          
-          <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-2">
-              <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Notgroschen</span>
-              <ShieldAlert size={20} className="text-yellow-500" />
-            </div>
-            <div className="text-2xl font-bold z-10">{kpis.emergencyProgress.toFixed(0)}%</div>
-            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 z-10">Ziel: {formatCurrency(kpis.emergencyTarget)}</div>
-            <div className="absolute bottom-0 left-0 h-1 bg-yellow-500 transition-all duration-1000" style={{ width: `${kpis.emergencyProgress}%` }}></div>
-          </div>
-
-          <KPICard title="FIRE Roadmap" value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub="Bis Freiheit" icon={<Flame />} color="from-orange-400 to-red-500" />
-          <KPICard title="Runway" value={`${kpis.runwayMonths.toFixed(1)} Mon.`} sub="Survival Time" icon={<Target />} color="from-slate-600 to-slate-800" />
-        </div>
-
-        {/* --- DYNAMIC VIEWS --- */}
-        <div className="bg-white/30 dark:bg-slate-900/30 backdrop-blur-2xl rounded-[2rem] p-6 border border-white/50 dark:border-slate-700/50 shadow-2xl min-h-[500px]">
-          
-          {view === 'month' && (
-            <div className="flex flex-col gap-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400">
-                  Taktisches Board {currentMonth}/{currentYear}
-                </h2>
-                <button onClick={handleSmartMerge} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/30 transition-all">
-                  <Copy size={16} /> Smart Merge
+                <button onClick={exportJSON} className="p-1 hover:bg-white/20 rounded-lg transition" title="Export JSON">
+                  <i className="ph-bold ph-download-simple text-lg"></i>
                 </button>
+              </div>
+            </div>
+
+            {/* NAV BAR */}
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/40 dark:border-slate-700/50 shadow-xl">
+              <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center">
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                  <button 
+                    key={m}
+                    onClick={() => setCurrentMonth(m)}
+                    className={`w-10 h-10 rounded-xl text-sm font-semibold transition-all ${currentMonth === m ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'hover:bg-white/50 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400'}`}
+                  >
+                    {new Date(2000, m - 1, 1).toLocaleString('de-DE', { month: 'short' })}
+                  </button>
+                ))}
               </div>
               
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" />
-                <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" />
-                <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={currentData.invest.reduce((a,b)=>a+(b.recurring?b.val:0),0)} ratio={kpis.incRec > 0 ? (currentData.invest.reduce((a,b)=>a+(b.recurring?b.val:0),0) / kpis.incRec * 100).toFixed(0) : 0} title="Investments" />
-                <CategoryColumn name="assets" data={currentData.assets} update={(d) => updateMonthData(currentYear, currentMonth, 'assets', d)} totalRec={currentData.assets.reduce((a,b)=>a+b.val,0)} ratio="--" title="Assets" isAsset />
+              <div className="flex items-center gap-4 flex-wrap justify-center">
+                <div className="flex items-center bg-white/50 dark:bg-black/40 rounded-2xl p-1">
+                  <button onClick={() => setCurrentYear(y => y - 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><i className="ph-bold ph-caret-left text-lg"></i></button>
+                  <span className="px-4 font-bold text-lg">{currentYear}</span>
+                  <button onClick={() => setCurrentYear(y => y + 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><i className="ph-bold ph-caret-right text-lg"></i></button>
+                </div>
+                
+                <div className="flex bg-white/50 dark:bg-black/40 rounded-2xl p-1">
+                  {['month', 'analyse', 'year'].map(v => (
+                    <button 
+                      key={v}
+                      onClick={() => setView(v)}
+                      className={`px-4 py-2 rounded-xl text-sm font-bold capitalize transition-all ${view === v ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'text-slate-600 dark:text-slate-400 hover:bg-white/30 dark:hover:bg-white/10'}`}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-          )}
 
-          {view === 'analyse' && (
-            chartJs.failed ? <ChartFallbackError /> : chartJs.loaded && <AnalyseView data={currentData} />
-          )}
+            {/* KPI BRIEFING */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+              <KPICard title="Net Worth" value={formatCurrency(kpis.netWorth)} sub={`≈ ${kpis.btcEq} BTC`} icon={<i className="ph-fill ph-wallet text-xl"></i>} color="from-blue-500 to-indigo-500" />
+              <KPICard title="Cashflow" value={formatCurrency(kpis.cashflow)} sub={`Sparquote: ${kpis.savingsRate.toFixed(1)}%`} icon={<i className="ph-bold ph-arrows-clockwise text-xl"></i>} color={kpis.cashflow >= 0 ? "from-emerald-400 to-teal-500" : "from-red-400 to-rose-500"} />
+              <KPICard title="Restbudget" value={formatCurrency(kpis.restBudget)} sub="Living Buffer" icon={<i className="ph-fill ph-piggy-bank text-xl"></i>} color="from-purple-500 to-fuchsia-500" />
+              
+              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group">
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Notgroschen</span>
+                  <i className="ph-fill ph-shield-warning text-xl text-yellow-500"></i>
+                </div>
+                <div className="text-2xl font-bold z-10">{kpis.emergencyProgress.toFixed(0)}%</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 z-10">Ziel: {formatCurrency(kpis.emergencyTarget)}</div>
+                <div className="absolute bottom-0 left-0 h-1 bg-yellow-500 transition-all duration-1000" style={{ width: `${kpis.emergencyProgress}%` }}></div>
+              </div>
 
-          {view === 'year' && (
-            chartJs.failed ? <ChartFallbackError /> : chartJs.loaded && <YearView db={db} year={currentYear} />
-          )}
-          
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- SUB-COMPONENTS ---
-
-function ChartFallbackError() {
-  return (
-    <div className="flex flex-col items-center justify-center h-full p-10 text-center gap-4 text-slate-500">
-      <AlertCircle size={48} className="text-red-500 opacity-50" />
-      <h3 className="text-xl font-bold">Charts blockiert</h3>
-      <p className="max-w-md">Dein Browser oder diese Vorschau-Umgebung blockiert externe Skripte (Chart.js via CDN). Keine Sorge, die Logik funktioniert einwandfrei. Um die Charts zu sehen, hoste die App wie im Report beschrieben über GitHub Pages.</p>
-    </div>
-  );
-}
-
-function KPICard({ title, value, sub, icon, color }) {
-  return (
-    <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between group hover:scale-[1.02] transition-transform">
-      <div className="flex justify-between items-start mb-2">
-        <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</span>
-        <div className={`p-2 rounded-xl bg-gradient-to-br ${color} text-white shadow-lg opacity-80 group-hover:opacity-100 transition-opacity`}>
-          {icon}
-        </div>
-      </div>
-      <div>
-        <div className="text-2xl font-bold">{value}</div>
-        <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{sub}</div>
-      </div>
-    </div>
-  );
-}
-
-function CategoryColumn({ name, data, update, totalRec, ratio, title, isAsset = false }) {
-  const safeData = data || [];
-  const [newItemName, setNewItemName] = useState('');
-  const [newItemVal, setNewItemVal] = useState('');
-
-  const addItem = (e) => {
-    e.preventDefault();
-    if (!newItemName || !newItemVal) return;
-    const newData = [...safeData, { id: Date.now(), name: newItemName, val: parseFloat(newItemVal), recurring: true }];
-    update(newData);
-    setNewItemName('');
-    setNewItemVal('');
-  };
-
-  const removeItem = (id) => {
-    update(safeData.filter(i => i.id !== id));
-  };
-
-  const toggleRecurring = (id) => {
-    update(safeData.map(i => i.id === id ? { ...i, recurring: !i.recurring } : i));
-  };
-
-  const updateItem = (id, field, val) => {
-    update(safeData.map(i => i.id === id ? { ...i, [field]: val } : i));
-  };
-
-  const totalAll = safeData.reduce((a,b) => a + b.val, 0);
-
-  return (
-    <div className="flex flex-col gap-3 bg-white/20 dark:bg-black/20 rounded-2xl p-4 border border-white/30 dark:border-white/5">
-      <div className="flex justify-between items-end mb-2 border-b border-slate-300 dark:border-slate-700 pb-2">
-        <div>
-          <h3 className="font-bold text-lg capitalize">{title}</h3>
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            {isAsset ? 'Total:' : 'KPI Relevant:'} <span className="font-bold text-slate-800 dark:text-slate-200">{formatCurrency(isAsset ? totalAll : totalRec)}</span>
-          </div>
-        </div>
-        {!isAsset && <div className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded-lg">{ratio}% Ratio</div>}
-      </div>
-
-      <div className="flex-1 overflow-y-auto max-h-[400px] space-y-2 pr-1 custom-scrollbar">
-        {safeData.map(item => (
-          <div key={item.id} className={`group flex flex-col gap-1 p-3 rounded-xl border transition-all ${item.recurring || isAsset ? 'bg-white/60 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700' : 'bg-slate-100/40 dark:bg-slate-900/40 border-dashed border-slate-300 dark:border-slate-800 opacity-70'}`}>
-            <div className="flex justify-between items-center gap-2">
-              <input 
-                value={item.name} 
-                onChange={(e) => updateItem(item.id, 'name', e.target.value)}
-                className="bg-transparent font-medium text-sm outline-none w-full"
-              />
-              <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Trash2 size={14} />
-              </button>
+              <KPICard title="FIRE Roadmap" value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub="Bis Freiheit" icon={<i className="ph-fill ph-fire text-xl"></i>} color="from-orange-400 to-red-500" />
+              <KPICard title="Runway" value={`${kpis.runwayMonths.toFixed(1)} Mon.`} sub="Survival Time" icon={<i className="ph-fill ph-target text-xl"></i>} color="from-slate-600 to-slate-800" />
             </div>
-            <div className="flex justify-between items-center">
-              <input 
-                type="number" 
-                value={item.val} 
-                onChange={(e) => updateItem(item.id, 'val', parseFloat(e.target.value) || 0)}
-                className="bg-transparent font-bold outline-none w-24 text-blue-600 dark:text-blue-400"
-              />
-              {!isAsset && (
-                <button 
-                  onClick={() => toggleRecurring(item.id)} 
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${item.recurring ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
-                >
-                  {item.recurring ? 'Recur' : 'One-Off'}
-                </button>
+
+            {/* VIEWS */}
+            <div className="bg-white/30 dark:bg-slate-900/30 backdrop-blur-2xl rounded-[2rem] p-6 border border-white/50 dark:border-slate-700/50 shadow-2xl min-h-[500px]">
+              
+              {view === 'month' && (
+                <div className="flex flex-col gap-6">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400">
+                      Taktisches Board {currentMonth}/{currentYear}
+                    </h2>
+                    <button onClick={handleSmartMerge} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-blue-500/30 transition-all">
+                      <i className="ph-bold ph-copy"></i> Smart Merge
+                    </button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" />
+                    <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" />
+                    <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={currentData.invest.reduce((a,b)=>a+(b.recurring?b.val:0),0)} ratio={kpis.incRec > 0 ? (currentData.invest.reduce((a,b)=>a+(b.recurring?b.val:0),0) / kpis.incRec * 100).toFixed(0) : 0} title="Investments" />
+                    <CategoryColumn name="assets" data={currentData.assets} update={(d) => updateMonthData(currentYear, currentMonth, 'assets', d)} totalRec={currentData.assets.reduce((a,b)=>a+b.val,0)} ratio="--" title="Assets" isAsset />
+                  </div>
+                </div>
               )}
+
+              {view === 'analyse' && <AnalyseView data={currentData} />}
+              {view === 'year' && <YearView db={db} year={currentYear} />}
+              
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      );
+    }
 
-      <form onSubmit={addItem} className="mt-auto flex gap-2 pt-2">
-        <input 
-          placeholder="Name..." 
-          value={newItemName} 
-          onChange={e => setNewItemName(e.target.value)}
-          className="flex-1 bg-white/50 dark:bg-black/40 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700"
-        />
-        <input 
-          type="number" 
-          placeholder="€" 
-          value={newItemVal} 
-          onChange={e => setNewItemVal(e.target.value)}
-          className="w-20 bg-white/50 dark:bg-black/40 rounded-lg px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700"
-        />
-        <button type="submit" className="bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 p-2 rounded-lg hover:scale-105 transition-transform">
-          <Plus size={18} />
-        </button>
-      </form>
-    </div>
-  );
-}
+    // --- SUB-COMPONENTS ---
+    function KPICard({ title, value, sub, icon, color }) {
+      return (
+        <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between group hover:scale-[1.02] transition-transform">
+          <div className="flex justify-between items-start mb-2">
+            <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{title}</span>
+            <div className={`p-2 rounded-xl bg-gradient-to-br ${color} text-white shadow-lg opacity-80 group-hover:opacity-100 transition-opacity`}>
+              {icon}
+            </div>
+          </div>
+          <div>
+            <div className="text-2xl font-bold">{value}</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">{sub}</div>
+          </div>
+        </div>
+      );
+    }
 
-// --- CHARTS COMPONENTS ---
-function AnalyseView({ data }) {
-  const allocChartRef = useRef(null);
-  const incChartRef = useRef(null);
-  const expChartRef = useRef(null);
+    function CategoryColumn({ name, data, update, totalRec, ratio, title, isAsset = false }) {
+      const safeData = data || [];
+      const [newItemName, setNewItemName] = useState('');
+      const [newItemVal, setNewItemVal] = useState('');
 
-  useEffect(() => {
-    if (!window.Chart) return;
-    
-    let allocChartInst = null;
-    let incChartInst = null;
-    let expChartInst = null;
+      const addItem = (e) => {
+        e.preventDefault();
+        if (!newItemName || !newItemVal) return;
+        const newData = [...safeData, { id: Date.now(), name: newItemName, val: parseFloat(newItemVal), recurring: true }];
+        update(newData);
+        setNewItemName('');
+        setNewItemVal('');
+      };
 
-    const createDonut = (ctx, items, colorScheme) => {
-      if (!ctx) return null;
-      const sorted = [...(items || [])].filter(i => i.val > 0).sort((a,b) => b.val - a.val);
-      
-      return new window.Chart(ctx, {
-        type: 'doughnut',
-        data: {
-          labels: sorted.map(i => i.name),
-          datasets: [{
-            data: sorted.map(i => i.val),
-            backgroundColor: colorScheme,
-            borderWidth: 0,
-            hoverOffset: 4
-          }]
-        },
-        options: {
-          responsive: true,
-          cutout: '75%',
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                label: (ctx) => ` ${ctx.label}: ${formatCurrency(ctx.raw)}`
+      const removeItem = (id) => update(safeData.filter(i => i.id !== id));
+      const toggleRecurring = (id) => update(safeData.map(i => i.id === id ? { ...i, recurring: !i.recurring } : i));
+      const updateItem = (id, field, val) => update(safeData.map(i => i.id === id ? { ...i, [field]: val } : i));
+
+      const totalAll = safeData.reduce((a,b) => a + b.val, 0);
+
+      return (
+        <div className="flex flex-col gap-3 bg-white/20 dark:bg-black/20 rounded-2xl p-4 border border-white/30 dark:border-white/5">
+          <div className="flex justify-between items-end mb-2 border-b border-slate-300 dark:border-slate-700 pb-2">
+            <div>
+              <h3 className="font-bold text-lg capitalize">{title}</h3>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {isAsset ? 'Total:' : 'KPI Relevant:'} <span className="font-bold text-slate-800 dark:text-slate-200">{formatCurrency(isAsset ? totalAll : totalRec)}</span>
+              </div>
+            </div>
+            {!isAsset && <div className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded-lg">{ratio}% Ratio</div>}
+          </div>
+
+          <div className="flex-1 overflow-y-auto max-h-[400px] space-y-2 pr-1 custom-scrollbar">
+            {safeData.map(item => (
+              <div key={item.id} className={`group flex flex-col gap-1 p-3 rounded-xl border transition-all ${item.recurring || isAsset ? 'bg-white/60 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700' : 'bg-slate-100/40 dark:bg-slate-900/40 border-dashed border-slate-300 dark:border-slate-800 opacity-70'}`}>
+                <div className="flex justify-between items-center gap-2">
+                  <input 
+                    value={item.name} 
+                    onChange={(e) => updateItem(item.id, 'name', e.target.value)}
+                    className="bg-transparent font-medium text-sm outline-none w-full"
+                  />
+                  <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <i className="ph-bold ph-trash"></i>
+                  </button>
+                </div>
+                <div className="flex justify-between items-center">
+                  <input 
+                    type="number" 
+                    value={item.val} 
+                    onChange={(e) => updateItem(item.id, 'val', parseFloat(e.target.value) || 0)}
+                    className="bg-transparent font-bold outline-none w-24 text-blue-600 dark:text-blue-400"
+                  />
+                  {!isAsset && (
+                    <button 
+                      onClick={() => toggleRecurring(item.id)} 
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${item.recurring ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
+                    >
+                      {item.recurring ? 'Recur' : 'One-Off'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <form onSubmit={addItem} className="mt-auto flex gap-2 pt-2">
+            <input 
+              placeholder="Name..." 
+              value={newItemName} 
+              onChange={e => setNewItemName(e.target.value)}
+              className="flex-1 bg-white/50 dark:bg-black/40 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700"
+            />
+            <input 
+              type="number" 
+              placeholder="€" 
+              value={newItemVal} 
+              onChange={e => setNewItemVal(e.target.value)}
+              className="w-20 bg-white/50 dark:bg-black/40 rounded-lg px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700"
+            />
+            <button type="submit" className="bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 p-2 rounded-lg hover:scale-105 transition-transform flex items-center justify-center">
+              <i className="ph-bold ph-plus text-lg"></i>
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    function AnalyseView({ data }) {
+      const allocChartRef = useRef(null);
+      const incChartRef = useRef(null);
+      const expChartRef = useRef(null);
+
+      useEffect(() => {
+        if (!window.Chart) return;
+        
+        let allocChartInst = null;
+        let incChartInst = null;
+        let expChartInst = null;
+
+        const createDonut = (ctx, items, colorScheme) => {
+          if (!ctx) return null;
+          const sorted = [...(items || [])].filter(i => i.val > 0).sort((a,b) => b.val - a.val);
+          
+          return new window.Chart(ctx, {
+            type: 'doughnut',
+            data: {
+              labels: sorted.map(i => i.name),
+              datasets: [{
+                data: sorted.map(i => i.val),
+                backgroundColor: colorScheme,
+                borderWidth: 0,
+                hoverOffset: 4
+              }]
+            },
+            options: {
+              responsive: true,
+              cutout: '75%',
+              plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${formatCurrency(ctx.raw)}` } }
+              }
+            }
+          });
+        };
+
+        const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6'];
+        
+        if (incChartRef.current) incChartInst = createDonut(incChartRef.current, data.income, colors);
+        if (expChartRef.current) expChartInst = createDonut(expChartRef.current, data.expenses, colors.slice().reverse());
+
+        if (allocChartRef.current) {
+          const incTotal = (data.income || []).reduce((a,b)=>a+b.val,0);
+          const expTotal = (data.expenses || []).reduce((a,b)=>a+b.val,0);
+          const invTotal = (data.invest || []).reduce((a,b)=>a+b.val,0);
+          const liqTotal = Math.max(0, incTotal - expTotal - invTotal);
+
+          allocChartInst = new window.Chart(allocChartRef.current, {
+            type: 'doughnut',
+            data: {
+              labels: ['Konsum (Expenses)', 'Aufbau (Invest)', 'Liquidität (Rest)'],
+              datasets: [{
+                data: [expTotal, invTotal, liqTotal],
+                backgroundColor: ['#f43f5e', '#8b5cf6', '#3b82f6'],
+                borderWidth: 0
+              }]
+            },
+            options: {
+              responsive: true,
+              cutout: '60%',
+              plugins: {
+                legend: { position: 'bottom', labels: { color: '#888' } },
+              }
+            }
+          });
+        }
+
+        return () => {
+          if (incChartInst) incChartInst.destroy();
+          if (expChartInst) expChartInst.destroy();
+          if (allocChartInst) allocChartInst.destroy();
+        };
+      }, [data]);
+
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
+            <h3 className="text-xl font-bold mb-4">Portfolio Intelligence</h3>
+            <div className="w-full max-w-[250px] aspect-square relative">
+               <canvas ref={allocChartRef}></canvas>
+               <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-[-20px]">
+                 <span className="text-xs text-slate-500">Income</span>
+                 <span className="font-bold text-lg">{formatCurrency((data.income || []).reduce((a,b)=>a+b.val,0))}</span>
+               </div>
+            </div>
+          </div>
+          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
+            <h3 className="text-xl font-bold mb-4">Income Split</h3>
+            <div className="w-full max-w-[200px] aspect-square"><canvas ref={incChartRef}></canvas></div>
+          </div>
+          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
+            <h3 className="text-xl font-bold mb-4">Expense Split</h3>
+            <div className="w-full max-w-[200px] aspect-square"><canvas ref={expChartRef}></canvas></div>
+          </div>
+        </div>
+      );
+    }
+
+    function YearView({ db, year }) {
+      const chartRef = useRef(null);
+
+      const stats = useMemo(() => {
+        const yearData = db[year] || {};
+        let monthsActive = 0;
+        let totalInc = 0, totalExp = 0, totalInv = 0;
+        const history = { labels: [], nw: [], cf: [] };
+
+        const today = new Date();
+        const maxMonth = (year === today.getFullYear()) ? today.getMonth() + 1 : 12;
+
+        for (let m = 1; m <= 12; m++) {
+          const md = yearData[m];
+          if (md && m <= maxMonth) {
+            const inc = (md.income || []).reduce((a,b)=>a+(b.recurring?b.val:0),0);
+            const exp = (md.expenses || []).reduce((a,b)=>a+(b.recurring?b.val:0),0);
+            const inv = (md.invest || []).reduce((a,b)=>a+(b.recurring?b.val:0),0);
+            const nw = (md.assets || []).reduce((a,b)=>a+b.val,0);
+            
+            if (inc > 0 || exp > 0 || nw > 0) {
+              monthsActive++;
+              totalInc += inc;
+              totalExp += exp;
+              totalInv += inv;
+            }
+
+            history.labels.push(`M${m}`);
+            history.nw.push(nw);
+            history.cf.push(inc - exp);
+          } else if (m <= maxMonth) {
+            history.labels.push(`M${m}`);
+            history.nw.push(0);
+            history.cf.push(0);
+          }
+        }
+
+        return {
+          avgInc: monthsActive ? totalInc / monthsActive : 0,
+          avgExp: monthsActive ? totalExp / monthsActive : 0,
+          avgInv: monthsActive ? totalInv / monthsActive : 0,
+          avgSR: totalInc > 0 ? ((totalInc - totalExp) / totalInc) * 100 : 0,
+          history
+        };
+      }, [db, year]);
+
+      useEffect(() => {
+        if (!window.Chart || !chartRef.current) return;
+        
+        const chartInst = new window.Chart(chartRef.current, {
+          type: 'line',
+          data: {
+            labels: stats.history.labels,
+            datasets: [
+              {
+                label: 'Net Worth',
+                data: stats.history.nw,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                fill: true,
+                tension: 0.4,
+                yAxisID: 'y'
+              },
+              {
+                label: 'Cashflow',
+                data: stats.history.cf,
+                borderColor: '#22c55e',
+                backgroundColor: 'transparent',
+                borderDash: [5, 5],
+                tension: 0.4,
+                yAxisID: 'y1'
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: '#888' } } },
+            scales: {
+              x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
+              y: { 
+                type: 'linear', display: true, position: 'left',
+                grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' }
+              },
+              y1: {
+                type: 'linear', display: true, position: 'right',
+                grid: { drawOnChartArea: false }, ticks: { color: '#888' }
               }
             }
           }
-        }
-      });
-    };
+        });
 
-    const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6'];
-    
-    if (incChartRef.current) incChartInst = createDonut(incChartRef.current, data.income, colors);
-    if (expChartRef.current) expChartInst = createDonut(expChartRef.current, data.expenses, colors.slice().reverse());
+        return () => {
+          chartInst.destroy();
+        };
+      }, [stats]);
 
-    if (allocChartRef.current) {
-      const incTotal = (data.income || []).reduce((a,b)=>a+b.val,0);
-      const expTotal = (data.expenses || []).reduce((a,b)=>a+b.val,0);
-      const invTotal = (data.invest || []).reduce((a,b)=>a+b.val,0);
-      const liqTotal = Math.max(0, incTotal - expTotal - invTotal);
+      return (
+        <div className="flex flex-col gap-6 h-full">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
+              <div className="text-sm text-slate-500">Ø Income</div>
+              <div className="text-xl font-bold">{formatCurrency(stats.avgInc)}</div>
+            </div>
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
+              <div className="text-sm text-slate-500">Ø Expenses</div>
+              <div className="text-xl font-bold">{formatCurrency(stats.avgExp)}</div>
+            </div>
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
+              <div className="text-sm text-slate-500">Ø Invest</div>
+              <div className="text-xl font-bold">{formatCurrency(stats.avgInv)}</div>
+            </div>
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl border border-blue-500/30">
+              <div className="text-sm text-slate-500">Ø Sparquote</div>
+              <div className="text-xl font-bold text-blue-500">{stats.avgSR.toFixed(1)}%</div>
+            </div>
+          </div>
 
-      allocChartInst = new window.Chart(allocChartRef.current, {
-        type: 'doughnut',
-        data: {
-          labels: ['Konsum (Expenses)', 'Aufbau (Invest)', 'Liquidität (Rest)'],
-          datasets: [{
-            data: [expTotal, invTotal, liqTotal],
-            backgroundColor: ['#f43f5e', '#8b5cf6', '#3b82f6'],
-            borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          cutout: '60%',
-          plugins: {
-            legend: { position: 'bottom', labels: { color: '#888' } },
-          }
-        }
-      });
+          <div className="flex-1 min-h-[300px] bg-white/10 dark:bg-black/10 rounded-3xl p-4 border border-white/20 dark:border-white/5">
+            <canvas ref={chartRef}></canvas>
+          </div>
+        </div>
+      );
     }
 
-    return () => {
-      if (incChartInst) incChartInst.destroy();
-      if (expChartInst) expChartInst.destroy();
-      if (allocChartInst) allocChartInst.destroy();
-    };
-  }, [data]);
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-      <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-        <h3 className="text-xl font-bold mb-4">Portfolio Intelligence</h3>
-        <div className="w-full max-w-[250px] aspect-square relative">
-           <canvas ref={allocChartRef}></canvas>
-           <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-[-20px]">
-             <span className="text-xs text-slate-500">Income</span>
-             <span className="font-bold text-lg">{formatCurrency((data.income || []).reduce((a,b)=>a+b.val,0))}</span>
-           </div>
-        </div>
-      </div>
-      <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-        <h3 className="text-xl font-bold mb-4">Income Split</h3>
-        <div className="w-full max-w-[200px] aspect-square"><canvas ref={incChartRef}></canvas></div>
-      </div>
-      <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
-        <h3 className="text-xl font-bold mb-4">Expense Split</h3>
-        <div className="w-full max-w-[200px] aspect-square"><canvas ref={expChartRef}></canvas></div>
-      </div>
-    </div>
-  );
-}
-
-function YearView({ db, year }) {
-  const chartRef = useRef(null);
-
-  const stats = useMemo(() => {
-    const yearData = db[year] || {};
-    let monthsActive = 0;
-    let totalInc = 0, totalExp = 0, totalInv = 0;
-    const history = { labels: [], nw: [], cf: [] };
-
-    const today = new Date();
-    const maxMonth = (year === today.getFullYear()) ? today.getMonth() + 1 : 12;
-
-    for (let m = 1; m <= 12; m++) {
-      const md = yearData[m];
-      if (md && m <= maxMonth) {
-        const inc = (md.income || []).reduce((a,b)=>a+(b.recurring?b.val:0),0);
-        const exp = (md.expenses || []).reduce((a,b)=>a+(b.recurring?b.val:0),0);
-        const inv = (md.invest || []).reduce((a,b)=>a+(b.recurring?b.val:0),0);
-        const nw = (md.assets || []).reduce((a,b)=>a+b.val,0);
-        
-        if (inc > 0 || exp > 0 || nw > 0) {
-          monthsActive++;
-          totalInc += inc;
-          totalExp += exp;
-          totalInv += inv;
-        }
-
-        history.labels.push(`M${m}`);
-        history.nw.push(nw);
-        history.cf.push(inc - exp);
-      } else if (m <= maxMonth) {
-        history.labels.push(`M${m}`);
-        history.nw.push(0);
-        history.cf.push(0);
-      }
-    }
-
-    return {
-      avgInc: monthsActive ? totalInc / monthsActive : 0,
-      avgExp: monthsActive ? totalExp / monthsActive : 0,
-      avgInv: monthsActive ? totalInv / monthsActive : 0,
-      avgSR: totalInc > 0 ? ((totalInc - totalExp) / totalInc) * 100 : 0,
-      history
-    };
-  }, [db, year]);
-
-  useEffect(() => {
-    if (!window.Chart || !chartRef.current) return;
-    
-    const chartInst = new window.Chart(chartRef.current, {
-      type: 'line',
-      data: {
-        labels: stats.history.labels,
-        datasets: [
-          {
-            label: 'Net Worth',
-            data: stats.history.nw,
-            borderColor: '#3b82f6',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-            fill: true,
-            tension: 0.4,
-            yAxisID: 'y'
-          },
-          {
-            label: 'Cashflow',
-            data: stats.history.cf,
-            borderColor: '#22c55e',
-            backgroundColor: 'transparent',
-            borderDash: [5, 5],
-            tension: 0.4,
-            yAxisID: 'y1'
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: { labels: { color: '#888' } }
-        },
-        scales: {
-          x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' } },
-          y: { 
-            type: 'linear', display: true, position: 'left',
-            grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888' }
-          },
-          y1: {
-            type: 'linear', display: true, position: 'right',
-            grid: { drawOnChartArea: false }, ticks: { color: '#888' }
-          }
-        }
-      }
-    });
-
-    return () => {
-      chartInst.destroy();
-    };
-  }, [stats]);
-
-  return (
-    <div className="flex flex-col gap-6 h-full">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
-          <div className="text-sm text-slate-500">Ø Income</div>
-          <div className="text-xl font-bold">{formatCurrency(stats.avgInc)}</div>
-        </div>
-        <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
-          <div className="text-sm text-slate-500">Ø Expenses</div>
-          <div className="text-xl font-bold">{formatCurrency(stats.avgExp)}</div>
-        </div>
-        <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
-          <div className="text-sm text-slate-500">Ø Invest</div>
-          <div className="text-xl font-bold">{formatCurrency(stats.avgInv)}</div>
-        </div>
-        <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl border border-blue-500/30">
-          <div className="text-sm text-slate-500">Ø Sparquote</div>
-          <div className="text-xl font-bold text-blue-500">{stats.avgSR.toFixed(1)}%</div>
-        </div>
-      </div>
-
-      <div className="flex-1 min-h-[300px] bg-white/10 dark:bg-black/10 rounded-3xl p-4 border border-white/20 dark:border-white/5">
-        <canvas ref={chartRef}></canvas>
-      </div>
-    </div>
-  );
-}
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
