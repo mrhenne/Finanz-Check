@@ -48,31 +48,26 @@
     .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
     .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.5); }
     
-    /* Hide scrollbar for the ticker but allow logic */
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     
-    /* Slider Styling */
-    input[type=range] {
-      -webkit-appearance: none;
-      background: transparent;
+    /* STEALTH MODE BLUR */
+    .stealth-active .sensitive {
+      filter: blur(6px);
+      opacity: 0.7;
+      user-select: none;
+      pointer-events: none;
+      transition: all 0.3s ease;
     }
+    
+    /* Slider Styling */
+    input[type=range] { -webkit-appearance: none; background: transparent; }
     input[type=range]::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      height: 20px;
-      width: 20px;
-      border-radius: 50%;
-      background: #3b82f6;
-      cursor: pointer;
-      margin-top: -8px;
-      box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
+      -webkit-appearance: none; height: 20px; width: 20px; border-radius: 50%;
+      background: #3b82f6; cursor: pointer; margin-top: -8px; box-shadow: 0 0 10px rgba(59, 130, 246, 0.5);
     }
     input[type=range]::-webkit-slider-runnable-track {
-      width: 100%;
-      height: 4px;
-      cursor: pointer;
-      background: rgba(255, 255, 255, 0.2);
-      border-radius: 2px;
+      width: 100%; height: 4px; cursor: pointer; background: rgba(255, 255, 255, 0.2); border-radius: 2px;
     }
   </style>
 </head>
@@ -83,20 +78,25 @@
   <script type="text/babel">
     const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
-    const STORAGE_KEY = 'lw_tactical_v16_github';
-    const SETTINGS_KEY = 'lw_tactical_settings';
+    const STORAGE_KEY = 'lw_tactical_v17_github';
+    const SETTINGS_KEY = 'lw_tactical_settings_v17';
     const DEFAULT_YEAR = new Date().getFullYear();
     const DEFAULT_MONTH = new Date().getMonth() + 1;
     const CATEGORIES = ['income', 'expenses', 'invest', 'assets'];
 
     const formatCurrency = (val) => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(val || 0);
 
-    const getEmptyMonth = () => ({
-      income: [], expenses: [], invest: [], assets: []
-    });
+    const getEmptyMonth = () => ({ income: [], expenses: [], invest: [], assets: [] });
 
     const calculateFIRE = (assets, invest, expenses, settings) => {
-      const target = expenses * 12 * (100 / settings.fireSWR); 
+      let target = 0;
+      if (settings.fireTargetMode === 'fixed') {
+        target = settings.fireFixedTarget;
+      } else {
+        target = expenses * 12 * (100 / settings.fireSWR);
+      }
+      
+      if (target <= 0) return 0;
       if (assets >= target) return 0;
       if (invest <= 0 && assets <= 0) return 999;
       
@@ -112,19 +112,20 @@
     };
 
     const loadState = () => {
-      try {
-        const saved = window.localStorage.getItem(STORAGE_KEY);
-        if (saved) return JSON.parse(saved);
-      } catch (e) {}
+      try { const saved = window.localStorage.getItem(STORAGE_KEY); if (saved) return JSON.parse(saved); } catch (e) {}
       return { [DEFAULT_YEAR]: { [DEFAULT_MONTH]: getEmptyMonth() } };
     };
 
     const loadSettings = () => {
-      try {
-        const saved = window.localStorage.getItem(SETTINGS_KEY);
-        if (saved) return JSON.parse(saved);
-      } catch (e) {}
-      return { emergencyMonths: 6, fireSWR: 4, fireROI: 7 };
+      try { const saved = window.localStorage.getItem(SETTINGS_KEY); if (saved) return JSON.parse(saved); } catch (e) {}
+      return { 
+        emergencyMonths: 6, 
+        fireSWR: 4, 
+        fireROI: 7, 
+        fireTargetMode: 'expense', 
+        fireFixedTarget: 1000000,
+        milestones: "10000, 50000, 100000, 250000, 500000, 1000000, 2500000"
+      };
     };
 
     const saveState = (db) => { try { window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db)); } catch (e) {} };
@@ -137,6 +138,7 @@
       const [currentMonth, setCurrentMonth] = useState(DEFAULT_MONTH);
       const [view, setView] = useState('month'); 
       const [darkMode, setDarkMode] = useState(true);
+      const [stealthMode, setStealthMode] = useState(false);
       const [cryptoList, setCryptoList] = useState([]);
       const [isClient, setIsClient] = useState(false);
       const [showSettings, setShowSettings] = useState(false);
@@ -158,14 +160,17 @@
       }, [darkMode]);
 
       useEffect(() => {
+        if (stealthMode) document.body.classList.add('stealth-active');
+        else document.body.classList.remove('stealth-active');
+      }, [stealthMode]);
+
+      useEffect(() => {
         const fetchCrypto = async () => {
           try {
             const res = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=eur&order=market_cap_desc&per_page=10&page=1&sparkline=false');
             const data = await res.json();
             if (Array.isArray(data)) setCryptoList(data);
-          } catch (err) {
-            console.warn("Crypto API offline.");
-          }
+          } catch (err) { console.warn("Crypto API offline."); }
         };
         fetchCrypto();
         const interval = setInterval(fetchCrypto, 60000);
@@ -177,23 +182,13 @@
       }, [db]);
 
       const updateMonthData = (year, month, category, newData) => {
-        setDb(prev => ({
-          ...prev,
-          [year]: {
-            ...(prev[year] || {}),
-            [month]: {
-              ...(prev[year]?.[month] || getEmptyMonth()),
-              [category]: newData
-            }
-          }
-        }));
+        setDb(prev => ({ ...prev, [year]: { ...(prev[year] || {}), [month]: { ...(prev[year]?.[month] || getEmptyMonth()), [category]: newData } } }));
       };
 
       const currentData = getMonthData(currentYear, currentMonth);
       
       const kpis = useMemo(() => {
-        const sumCat = (cat, onlyRecurring = false) => 
-          (cat || []).reduce((acc, item) => acc + (onlyRecurring ? (item.recurring ? item.val : 0) : item.val), 0);
+        const sumCat = (cat, onlyRecurring = false) => (cat || []).reduce((acc, item) => acc + (onlyRecurring ? (item.recurring ? item.val : 0) : item.val), 0);
 
         const incRec = sumCat(currentData.income, true);
         const expRec = sumCat(currentData.expenses, true);
@@ -208,6 +203,8 @@
         const emergencyProgress = emergencyTarget > 0 ? Math.min(100, (assTot / emergencyTarget) * 100) : 0;
         
         const fireYears = calculateFIRE(assTot, invRec, expRec, settings);
+        let fireTarget = settings.fireTargetMode === 'fixed' ? settings.fireFixedTarget : expRec * 12 * (100 / settings.fireSWR);
+        
         const runwayMonths = expRec > 0 ? (assTot / expRec) : 0;
         
         const btcData = cryptoList.find(c => c.symbol === 'btc');
@@ -215,21 +212,31 @@
         
         const dailyBurnRate = expRec / 30;
 
-        const milestones = [10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2500000, 5000000, 10000000];
-        const nextMilestone = milestones.find(m => m > assTot) || 10000000;
-        const prevMilestone = milestones.slice().reverse().find(m => m <= assTot) || 0;
+        // Dynamic Milestones
+        const parsedMilestones = settings.milestones.split(',').map(m => parseInt(m.trim())).filter(m => !isNaN(m)).sort((a,b) => a-b);
+        if(parsedMilestones.length === 0) parsedMilestones.push(100000);
+        const nextMilestone = parsedMilestones.find(m => m > assTot) || parsedMilestones[parsedMilestones.length - 1] * 2;
+        const prevMilestone = parsedMilestones.slice().reverse().find(m => m <= assTot) || 0;
         const milestoneProgress = nextMilestone > prevMilestone ? ((assTot - prevMilestone) / (nextMilestone - prevMilestone)) * 100 : 100;
 
         const topExpense = currentData.expenses && currentData.expenses.length > 0 
           ? currentData.expenses.reduce((max, item) => item.val > max.val ? item : max, {name: 'Keine Ausgaben', val: 0}) 
           : {name: 'Keine Ausgaben', val: 0};
 
+        // Wealth Velocity (Vergleich zum Vormonat)
+        let prevM = currentMonth - 1;
+        let prevY = currentYear;
+        if (prevM === 0) { prevM = 12; prevY -= 1; }
+        const prevData = getMonthData(prevY, prevM);
+        const prevAssTot = sumCat(prevData.assets, false);
+        const wealthVelocity = (assTot - prevAssTot) / 30; // pro Tag
+
         return {
           netWorth: assTot, btcEq, cashflow, savingsRate, restBudget, 
-          emergencyProgress, emergencyTarget, fireYears, runwayMonths, expRec, incRec, invRec, dailyBurnRate,
-          nextMilestone, milestoneProgress, topExpense
+          emergencyProgress, emergencyTarget, fireYears, fireTarget, runwayMonths, expRec, incRec, invRec, dailyBurnRate,
+          nextMilestone, milestoneProgress, topExpense, wealthVelocity
         };
-      }, [currentData, cryptoList, settings]);
+      }, [currentData, currentYear, currentMonth, db, cryptoList, settings]);
 
       const availableMonths = useMemo(() => {
         const months = [];
@@ -246,69 +253,43 @@
       }, [db, currentYear, currentMonth]);
 
       useEffect(() => {
-        if (availableMonths.length > 0 && !importSource) {
-          setImportSource(availableMonths[0].value);
-        }
+        if (availableMonths.length > 0 && !importSource) setImportSource(availableMonths[0].value);
       }, [availableMonths, importSource]);
 
-      // --- BULLETPROOF SMART MERGE ---
       const handleImport = () => {
         if (!importSource) return;
         const [y, m] = importSource.split('-');
         const sourceData = getMonthData(parseInt(y), parseInt(m));
         
-        // Tiefe Kopie des aktuellen Monats, um Mutations-Bugs zu killen
         const merged = { 
-          income: [...(currentData.income || [])], 
-          expenses: [...(currentData.expenses || [])], 
-          invest: [...(currentData.invest || [])], 
-          assets: [...(currentData.assets || [])] 
+          income: [...(currentData.income || [])], expenses: [...(currentData.expenses || [])], 
+          invest: [...(currentData.invest || [])], assets: [...(currentData.assets || [])] 
         };
 
         CATEGORIES.forEach(cat => {
           const sourceItems = sourceData[cat] || [];
-          
           sourceItems.forEach(oldItem => {
             const cleanOldName = oldItem.name.trim().toLowerCase();
             const existingIdx = merged[cat].findIndex(i => i.name.trim().toLowerCase() === cleanOldName);
             
             if (existingIdx >= 0) {
-              // Item existiert bereits.
-              // Smart Merge: Nur wenn der aktuelle Wert 0 ist, wird er mit dem alten >0 überschrieben.
               if (merged[cat][existingIdx].val === 0 && oldItem.val > 0) {
-                merged[cat][existingIdx] = { 
-                  ...merged[cat][existingIdx], 
-                  val: oldItem.val,
-                  recurring: oldItem.recurring
-                };
+                merged[cat][existingIdx] = { ...merged[cat][existingIdx], val: oldItem.val, recurring: oldItem.recurring };
               }
             } else {
-              // Item existiert nicht -> komplett als neuen Posten anlegen
-              merged[cat].push({ 
-                ...oldItem, 
-                id: Date.now() + Math.random() 
-              });
+              merged[cat].push({ ...oldItem, id: Date.now() + Math.random() });
             }
           });
         });
 
-        // State Update feuern
-        setDb(prev => ({
-          ...prev,
-          [currentYear]: {
-            ...(prev[currentYear] || {}),
-            [currentMonth]: merged
-          }
-        }));
+        setDb(prev => ({ ...prev, [currentYear]: { ...(prev[currentYear] || {}), [currentMonth]: merged } }));
 
-        // Visuelles Feedback für dich (damit du weißt, dass er geklickt hat)
         const btn = document.getElementById('import-btn');
         if (btn) {
           const originalHTML = btn.innerHTML;
           btn.innerHTML = '<i class="ph-bold ph-check"></i> Merged!';
           btn.classList.replace('bg-slate-800', 'bg-green-600');
           btn.classList.replace('dark:bg-blue-600', 'dark:bg-green-600');
-          
           setTimeout(() => {
             btn.innerHTML = originalHTML;
             btn.classList.replace('bg-green-600', 'bg-slate-800');
@@ -326,9 +307,7 @@
           document.body.appendChild(downloadAnchorNode);
           downloadAnchorNode.click();
           downloadAnchorNode.remove();
-        } catch (e) {
-          alert("Export blockiert.");
-        }
+        } catch (e) { alert("Export blockiert."); }
       };
 
       if (!isClient) return <div className="min-h-screen flex items-center justify-center font-bold">Lade Engine...</div>;
@@ -344,7 +323,7 @@
           <div className="relative z-10 max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
             
             {/* TOP 10 CRYPTO TICKER */}
-            <div className="bg-slate-900 text-white dark:bg-black/50 backdrop-blur-md rounded-2xl border border-slate-800 shadow-lg overflow-hidden flex items-center h-12" title="Live-Daten der Top 10 Kryptowährungen nach Marktkapitalisierung via CoinGecko.">
+            <div className="bg-slate-900 text-white dark:bg-black/50 backdrop-blur-md rounded-2xl border border-slate-800 shadow-lg overflow-hidden flex items-center h-12" title="Live-Daten der Top 10 Kryptowährungen via CoinGecko.">
               <div className="px-4 font-bold text-blue-400 border-r border-slate-700 bg-slate-900 z-10 whitespace-nowrap h-full flex items-center shadow-[5px_0_10px_rgba(0,0,0,0.5)]">
                 <i className="ph-fill ph-trend-up mr-2"></i> TOP 10
               </div>
@@ -355,7 +334,7 @@
                       <div key={i} className="inline-flex items-center mx-6 gap-2">
                         <img src={coin.image} alt={coin.symbol} className="w-5 h-5 rounded-full" />
                         <span className="font-bold uppercase">{coin.symbol}</span>
-                        <span>{new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(coin.current_price)}</span>
+                        <span className="sensitive">{new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(coin.current_price)}</span>
                         <span className={coin.price_change_percentage_24h >= 0 ? 'text-green-400' : 'text-red-400'}>
                           {coin.price_change_percentage_24h > 0 ? '+' : ''}{coin.price_change_percentage_24h?.toFixed(2)}%
                         </span>
@@ -370,7 +349,7 @@
 
             {/* NAV BAR & HEADER */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/40 dark:border-slate-700/50 shadow-xl">
-              <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center" title="Wähle den Monat aus, den du analysieren oder bearbeiten möchtest.">
+              <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center" title="Wähle den Monat aus, den du analysieren möchtest.">
                 {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
                   <button 
                     key={m}
@@ -383,13 +362,13 @@
               </div>
               
               <div className="flex items-center gap-4 flex-wrap justify-center">
-                <div className="flex items-center bg-white/50 dark:bg-black/40 rounded-2xl p-1" title="Wechsle das aktive Jahr für deine Daten und Auswertungen.">
+                <div className="flex items-center bg-white/50 dark:bg-black/40 rounded-2xl p-1" title="Wechsle das aktive Jahr.">
                   <button onClick={() => setCurrentYear(y => y - 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><i className="ph-bold ph-caret-left text-lg"></i></button>
                   <span className="px-4 font-bold text-lg">{currentYear}</span>
                   <button onClick={() => setCurrentYear(y => y + 1)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl"><i className="ph-bold ph-caret-right text-lg"></i></button>
                 </div>
                 
-                <div className="flex bg-white/50 dark:bg-black/40 rounded-2xl p-1" title="Wechsle zwischen Eingabe (Month), Portfolio-Auswertung (Analyse) und Jahresübersicht (Year).">
+                <div className="flex bg-white/50 dark:bg-black/40 rounded-2xl p-1" title="Wechsle zwischen Ansichten.">
                   {['month', 'analyse', 'year'].map(v => (
                     <button 
                       key={v}
@@ -402,13 +381,16 @@
                 </div>
 
                 <div className="flex gap-2 bg-white/50 dark:bg-black/40 rounded-2xl p-2 ml-2">
-                  <button onClick={() => setDarkMode(!darkMode)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition" title="Wechselt zwischen Light- und Darkmode (OLED-optimiert).">
+                  <button onClick={() => setStealthMode(!stealthMode)} className={`p-2 rounded-xl transition ${stealthMode ? 'bg-red-500 text-white shadow-lg shadow-red-500/40' : 'hover:bg-white/50 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400'}`} title="Stealth Mode: Zensiert alle absoluten Zahlen für Screenshots oder Blicke über die Schulter.">
+                    {stealthMode ? <i className="ph-bold ph-eye-closed text-lg"></i> : <i className="ph-bold ph-eye text-lg"></i>}
+                  </button>
+                  <button onClick={() => setDarkMode(!darkMode)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Wechselt zwischen Light- und Darkmode.">
                     {darkMode ? <i className="ph-bold ph-sun text-lg"></i> : <i className="ph-bold ph-moon text-lg"></i>}
                   </button>
-                  <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Öffnet die taktischen Einstellungen für FIRE-Ziele und Notgroschen.">
+                  <button onClick={() => setShowSettings(true)} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Taktische Einstellungen (FIRE & Meilensteine).">
                     <i className="ph-bold ph-gear text-lg"></i>
                   </button>
-                  <button onClick={exportJSON} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Erstellt ein lokales JSON-Backup all deiner Finanzdaten.">
+                  <button onClick={exportJSON} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Lokales JSON-Backup erstellen.">
                     <i className="ph-bold ph-download-simple text-lg"></i>
                   </button>
                 </div>
@@ -418,31 +400,57 @@
             {/* SETTINGS MODAL */}
             {showSettings && (
               <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-                <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md relative">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md relative max-h-[90vh] overflow-y-auto">
                   <button onClick={() => setShowSettings(false)} className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-500 transition rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
                     <i className="ph-bold ph-x text-xl"></i>
                   </button>
                   <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><i className="ph-fill ph-gear"></i> Tactical Settings</h2>
                   
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Notgroschen Ziel (Monate)</label>
-                      <input type="number" value={settings.emergencyMonths} onChange={(e) => setSettings({...settings, emergencyMonths: parseFloat(e.target.value) || 0})} className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
-                      <p className="text-xs text-slate-500 mt-1">Wie viele Monatsausgaben willst du als harten Puffer?</p>
+                  <div className="space-y-6">
+                    <div className="p-4 bg-slate-50 dark:bg-black/30 rounded-2xl border border-slate-200 dark:border-slate-800">
+                      <h3 className="font-bold mb-3 text-sm text-blue-600 dark:text-blue-400">Meilensteine & Notgroschen</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Deine Meilensteine (€, kommagetrennt)</label>
+                          <input type="text" value={settings.milestones} onChange={(e) => setSettings({...settings, milestones: e.target.value})} className="w-full bg-white dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 text-sm border border-slate-200 dark:border-slate-700" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Notgroschen Ziel (in Monatsausgaben)</label>
+                          <input type="number" value={settings.emergencyMonths} onChange={(e) => setSettings({...settings, emergencyMonths: parseFloat(e.target.value) || 0})} className="w-full bg-white dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold border border-slate-200 dark:border-slate-700" />
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">FIRE Entnahmerate (%)</label>
-                      <input type="number" step="0.1" value={settings.fireSWR} onChange={(e) => setSettings({...settings, fireSWR: parseFloat(e.target.value) || 0})} className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
-                      <p className="text-xs text-slate-500 mt-1">Standard ist 4% (Safe Withdrawal Rate).</p>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Erwarteter ROI p.a. (%)</label>
-                      <input type="number" step="0.1" value={settings.fireROI} onChange={(e) => setSettings({...settings, fireROI: parseFloat(e.target.value) || 0})} className="w-full bg-slate-100 dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold" />
-                      <p className="text-xs text-slate-500 mt-1">Deine konservative Rendite-Schätzung (z.B. 7%).</p>
+
+                    <div className="p-4 bg-slate-50 dark:bg-black/30 rounded-2xl border border-slate-200 dark:border-slate-800">
+                      <h3 className="font-bold mb-3 text-sm text-orange-600 dark:text-orange-400">FIRE Roadmap Konfiguration</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Ziel-Berechnung</label>
+                          <select value={settings.fireTargetMode} onChange={(e) => setSettings({...settings, fireTargetMode: e.target.value})} className="w-full bg-white dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 text-sm border border-slate-200 dark:border-slate-700">
+                            <option value="expense">Dynamisch (Ausgaben x SWR)</option>
+                            <option value="fixed">Hartes Asset-Ziel (€)</option>
+                          </select>
+                        </div>
+                        {settings.fireTargetMode === 'fixed' ? (
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Dein FIRE-Ziel (€)</label>
+                            <input type="number" value={settings.fireFixedTarget} onChange={(e) => setSettings({...settings, fireFixedTarget: parseFloat(e.target.value) || 0})} className="w-full bg-white dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold border border-slate-200 dark:border-slate-700" />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">SWR - Entnahmerate (%)</label>
+                            <input type="number" step="0.1" value={settings.fireSWR} onChange={(e) => setSettings({...settings, fireSWR: parseFloat(e.target.value) || 0})} className="w-full bg-white dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold border border-slate-200 dark:border-slate-700" />
+                          </div>
+                        )}
+                        <div>
+                          <label className="block text-sm font-semibold text-slate-600 dark:text-slate-400 mb-1">Erwarteter ROI p.a. (%)</label>
+                          <input type="number" step="0.1" value={settings.fireROI} onChange={(e) => setSettings({...settings, fireROI: parseFloat(e.target.value) || 0})} className="w-full bg-white dark:bg-slate-800 rounded-xl p-3 outline-none focus:ring-2 focus:ring-blue-500 font-bold border border-slate-200 dark:border-slate-700" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                   
-                  <button onClick={() => setShowSettings(false)} className="mt-8 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/30">
+                  <button onClick={() => setShowSettings(false)} className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/30">
                     Speichern & Schließen
                   </button>
                 </div>
@@ -451,34 +459,34 @@
 
             {/* KPI BRIEFING GRID */}
             <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
-              <KPICard title="Net Worth" tooltip="Die absolute Summe all deiner Vermögenswerte (Assets). Dein finanzieller Fußabdruck." value={formatCurrency(kpis.netWorth)} sub={`≈ ${kpis.btcEq} BTC`} icon={<i className="ph-fill ph-wallet text-xl"></i>} color="from-blue-500 to-indigo-500" />
+              <KPICard title="Net Worth" tooltip="Gesamtvermögen. Dein finanzieller Fußabdruck." value={formatCurrency(kpis.netWorth)} sub={`≈ ${kpis.btcEq} BTC`} icon={<i className="ph-fill ph-wallet text-xl"></i>} color="from-blue-500 to-indigo-500" />
               
-              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group" title="Dein prozentualer Fortschritt zum nächsten großen, logischen Vermögensziel (10k, 50k, 100k, 1M, etc.).">
+              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group" title="Fortschritt zum nächsten eingestellten Meilenstein.">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Next Milestone</span>
                   <i className="ph-fill ph-flag-checkered text-xl text-blue-500"></i>
                 </div>
                 <div className="text-2xl font-bold z-10">{kpis.milestoneProgress.toFixed(0)}%</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 z-10">Ziel: {formatCurrency(kpis.nextMilestone)}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 z-10">Ziel: <span className="sensitive">{formatCurrency(kpis.nextMilestone)}</span></div>
                 <div className="absolute bottom-0 left-0 h-1 bg-blue-500 transition-all duration-1000" style={{ width: `${Math.max(0, Math.min(100, kpis.milestoneProgress))}%` }}></div>
               </div>
 
-              <KPICard title="Cashflow" tooltip="Wiederkehrendes Einkommen minus wiederkehrende Ausgaben. Das Kapital, das dir monatlich neu zum Investieren zur Verfügung steht." value={formatCurrency(kpis.cashflow)} sub={`Sparquote: ${kpis.savingsRate.toFixed(1)}%`} icon={<i className="ph-bold ph-arrows-clockwise text-xl"></i>} color={kpis.cashflow >= 0 ? "from-emerald-400 to-teal-500" : "from-red-400 to-rose-500"} />
-              <KPICard title="Restbudget" tooltip="Was dir nach Abzug aller Fixkosten und Investments zum reinen Konsum (Leben) in diesem Monat übrig bleibt." value={formatCurrency(kpis.restBudget)} sub="Living Buffer" icon={<i className="ph-fill ph-piggy-bank text-xl"></i>} color="from-purple-500 to-fuchsia-500" />
+              <KPICard title="Cashflow" tooltip="Einkommen minus Ausgaben. Dein freies Kapital zum Investieren." value={formatCurrency(kpis.cashflow)} sub={`Sparquote: ${kpis.savingsRate.toFixed(1)}%`} icon={<i className="ph-bold ph-arrows-clockwise text-xl"></i>} color={kpis.cashflow >= 0 ? "from-emerald-400 to-teal-500" : "from-red-400 to-rose-500"} />
+              <KPICard title="Wealth Velocity" tooltip="Vermögensveränderung pro Tag im Vergleich zum Vormonat. Positiv = Du baust auf." value={formatCurrency(Math.abs(kpis.wealthVelocity))} sub={`${kpis.wealthVelocity >= 0 ? '+' : '-'} pro Tag YTD`} icon={<i className="ph-fill ph-rocket-launch text-xl"></i>} color={kpis.wealthVelocity >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"} />
               
-              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group" title="Dein Sicherheitspuffer. Misst, wie viel Prozent deines eingestellten Notgroschen-Ziels (basierend auf deinen Fixkosten) du bereits als Cash-Asset hast.">
+              <div className="bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-5 border border-white/40 dark:border-slate-700/50 shadow-xl flex flex-col justify-between relative overflow-hidden group" title="Sicherheitspuffer basierend auf deinen Fixkosten.">
                 <div className="flex justify-between items-start mb-2">
                   <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Notgroschen</span>
                   <i className="ph-fill ph-shield-warning text-xl text-yellow-500"></i>
                 </div>
                 <div className="text-2xl font-bold z-10">{kpis.emergencyProgress.toFixed(0)}%</div>
-                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 z-10">Ziel: {formatCurrency(kpis.emergencyTarget)}</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 z-10">Ziel: <span className="sensitive">{formatCurrency(kpis.emergencyTarget)}</span></div>
                 <div className="absolute bottom-0 left-0 h-1 bg-yellow-500 transition-all duration-1000" style={{ width: `${Math.max(0, Math.min(100, kpis.emergencyProgress))}%` }}></div>
               </div>
 
-              <KPICard title="FIRE Roadmap" tooltip="Wie viele Jahre du brauchst, bis deine Investments durch Zinseszins und Sparrate deine monatlichen Fixkosten komplett decken." value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub="Bis Freiheit" icon={<i className="ph-fill ph-fire text-xl"></i>} color="from-orange-400 to-red-500" />
-              <KPICard title="Top Burner" tooltip="Dein absoluter Hauptkostentreiber (größter Ausgaben-Posten) in diesem speziellen Monat." value={formatCurrency(kpis.topExpense.val)} sub={kpis.topExpense.name} icon={<i className="ph-fill ph-warning-octagon text-xl"></i>} color="from-red-500 to-rose-600" />
-              <KPICard title="Daily Burn" tooltip="Deine statistischen Lebenshaltungskosten, heruntergebrochen auf einen einzigen Tag." value={formatCurrency(kpis.dailyBurnRate)} sub="Ausgaben pro Tag" icon={<i className="ph-fill ph-flame text-xl"></i>} color="from-slate-600 to-slate-800" />
+              <KPICard title="FIRE Roadmap" tooltip="Jahre bis dein Vermögen die Zielgröße erreicht hat." value={kpis.fireYears === 999 ? "N/A" : `${kpis.fireYears.toFixed(1)} Jahre`} sub={`Ziel: ${formatCurrency(kpis.fireTarget)}`} icon={<i className="ph-fill ph-fire text-xl"></i>} color="from-orange-400 to-red-500" />
+              <KPICard title="Top Burner" tooltip="Dein größter Ausgaben-Posten im aktuellen Monat." value={formatCurrency(kpis.topExpense.val)} sub={kpis.topExpense.name} icon={<i className="ph-fill ph-warning-octagon text-xl"></i>} color="from-red-500 to-rose-600" />
+              <KPICard title="Daily Burn" tooltip="Deine Lebenshaltungskosten auf einen Tag heruntergebrochen." value={formatCurrency(kpis.dailyBurnRate)} sub="Ausgaben pro Tag" icon={<i className="ph-fill ph-flame text-xl"></i>} color="from-slate-600 to-slate-800" />
             </div>
 
             {/* VIEWS */}
@@ -487,29 +495,26 @@
               {view === 'month' && (
                 <div className="flex flex-col gap-6">
                   <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                    <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400" title="Verwalte hier Einnahmen, Ausgaben und dein Vermögen für den gewählten Monat.">
+                    <h2 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400" title="Verwalte hier Einnahmen, Ausgaben und dein Vermögen.">
                       Taktisches Board {currentMonth}/{currentYear}
                     </h2>
                     
                     <div className="flex items-center gap-2 bg-white/50 dark:bg-black/30 p-2 rounded-2xl w-full xl:w-auto">
-                      <span className="text-sm text-slate-500 font-bold px-2 hidden sm:inline" title="Wähle den Monat, aus dem du die Struktur übernehmen willst.">Import aus:</span>
+                      <span className="text-sm text-slate-500 font-bold px-2 hidden sm:inline">Import aus:</span>
                       <select 
                         value={importSource} 
                         onChange={(e) => setImportSource(e.target.value)}
                         className="bg-white dark:bg-slate-800 text-sm font-bold p-2 rounded-xl outline-none cursor-pointer flex-1 xl:w-auto"
-                        title="Liste aller vergangenen Monate mit Daten."
                       >
                         {availableMonths.length === 0 && <option value="">Keine Daten</option>}
-                        {availableMonths.map(m => (
-                          <option key={m.value} value={m.value}>{m.label}</option>
-                        ))}
+                        {availableMonths.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                       </select>
                       <button 
                         id="import-btn"
                         onClick={handleImport}
                         disabled={!importSource}
                         className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-white dark:bg-blue-600 dark:hover:bg-blue-500 px-4 py-2 rounded-xl text-sm font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Kopiert fehlende Posten INKLUSIVE Werte aus dem gewählten Monat in den aktuellen. Bestehende Einträge bleiben geschützt."
+                        title="Intelligenter Import: Holt fehlende Werte aus dem Vormonat und aktualisiert 0-Einträge."
                       >
                         <i className="ph-bold ph-download-simple"></i> Copy
                       </button>
@@ -517,16 +522,16 @@
                   </div>
                   
                   <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6">
-                    <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" tooltip="Alle Geldflüsse, die dir zur Verfügung stehen. Setze Gehalt auf 'Recur'." />
-                    <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" tooltip="Dein Kapitalabfluss. Nur als 'Recur' markierte Ausgaben zählen zur Burn-Rate." />
-                    <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={kpis.invRec} ratio={kpis.incRec > 0 ? (kpis.invRec / kpis.incRec * 100).toFixed(0) : 0} title="Investments" tooltip="Geld, das du diesen Monat anlegst, damit es für dich arbeitet." />
-                    <CategoryColumn name="assets" data={currentData.assets} update={(d) => updateMonthData(currentYear, currentMonth, 'assets', d)} totalRec={kpis.netWorth} ratio="--" title="Assets" isAsset tooltip="Stichtags-Bewertung deines gesamten Besitzes (Krypto, ETF, Cash, Immos)." />
+                    <CategoryColumn name="income" data={currentData.income} update={(d) => updateMonthData(currentYear, currentMonth, 'income', d)} totalRec={kpis.incRec} ratio="100" title="Income" tooltip="Geldflüsse zu dir." />
+                    <CategoryColumn name="expenses" data={currentData.expenses} update={(d) => updateMonthData(currentYear, currentMonth, 'expenses', d)} totalRec={kpis.expRec} ratio={kpis.incRec > 0 ? (kpis.expRec / kpis.incRec * 100).toFixed(0) : 0} title="Expenses" tooltip="Kapitalabfluss. Recur = Fixkosten." />
+                    <CategoryColumn name="invest" data={currentData.invest} update={(d) => updateMonthData(currentYear, currentMonth, 'invest', d)} totalRec={kpis.invRec} ratio={kpis.incRec > 0 ? (kpis.invRec / kpis.incRec * 100).toFixed(0) : 0} title="Investments" tooltip="Neues Kapital, das in Assets fließt." />
+                    <CategoryColumn name="assets" data={currentData.assets} update={(d) => updateMonthData(currentYear, currentMonth, 'assets', d)} totalRec={kpis.netWorth} ratio="--" title="Assets" isAsset tooltip="Stichtagsbewertung aller Besitztümer." />
                   </div>
                 </div>
               )}
 
-              {view === 'analyse' && <AnalyseView data={currentData} kpis={kpis} settings={settings} calculateFIRE={calculateFIRE} darkMode={darkMode} />}
-              {view === 'year' && <YearView db={db} year={currentYear} />}
+              {view === 'analyse' && <AnalyseView data={currentData} kpis={kpis} settings={settings} calculateFIRE={calculateFIRE} darkMode={darkMode} stealthMode={stealthMode} />}
+              {view === 'year' && <YearView db={db} year={currentYear} stealthMode={stealthMode} />}
               
             </div>
           </div>
@@ -545,7 +550,7 @@
             </div>
           </div>
           <div>
-            <div className="text-2xl font-bold truncate">{value}</div>
+            <div className="text-2xl font-bold truncate sensitive">{value}</div>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 truncate">{sub}</div>
           </div>
         </div>
@@ -577,11 +582,11 @@
           <div className="flex justify-between items-end mb-2 border-b border-slate-300 dark:border-slate-700 pb-2">
             <div>
               <h3 className="font-bold text-lg capitalize">{title}</h3>
-              <div className="text-xs text-slate-500 dark:text-slate-400" title={isAsset ? "Die Summe aller eingetragenen Vermögenswerte." : "Summe aller Einträge, die als wiederkehrend ('Recur') markiert sind."}>
-                {isAsset ? 'Total:' : 'KPI Relevant:'} <span className="font-bold text-slate-800 dark:text-slate-200">{formatCurrency(isAsset ? totalAll : totalRec)}</span>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {isAsset ? 'Total:' : 'KPI Relevant:'} <span className="font-bold text-slate-800 dark:text-slate-200 sensitive">{formatCurrency(isAsset ? totalAll : totalRec)}</span>
               </div>
             </div>
-            {!isAsset && <div className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded-lg" title="Verhältnis dieser Kategorie zu deinen Gesamteinnahmen.">{ratio}% Ratio</div>}
+            {!isAsset && <div className="text-xs font-bold bg-slate-200 dark:bg-slate-800 px-2 py-1 rounded-lg">{ratio}% Ratio</div>}
           </div>
 
           <div className="flex-1 overflow-y-auto max-h-[400px] space-y-2 pr-1 custom-scrollbar">
@@ -592,9 +597,8 @@
                     value={item.name} 
                     onChange={(e) => updateItem(item.id, 'name', e.target.value)}
                     className="bg-transparent font-medium text-sm outline-none w-full"
-                    title="Bezeichnung bearbeiten"
                   />
-                  <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" title="Eintrag löschen">
+                  <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
                     <i className="ph-bold ph-trash"></i>
                   </button>
                 </div>
@@ -603,14 +607,12 @@
                     type="number" 
                     value={item.val} 
                     onChange={(e) => updateItem(item.id, 'val', parseFloat(e.target.value) || 0)}
-                    className="bg-transparent font-bold outline-none w-24 text-blue-600 dark:text-blue-400"
-                    title="Betrag in Euro bearbeiten"
+                    className="bg-transparent font-bold outline-none w-24 text-blue-600 dark:text-blue-400 sensitive"
                   />
                   {!isAsset && (
                     <button 
                       onClick={() => toggleRecurring(item.id)} 
                       className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${item.recurring ? 'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400' : 'bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400'}`}
-                      title={item.recurring ? "Dies ist ein wiederkehrender Posten und zählt zu den KPIs." : "Dies ist ein Einmal-Posten und verfälscht deine Strategie-KPIs nicht."}
                     >
                       {item.recurring ? 'Recur' : 'One-Off'}
                     </button>
@@ -620,20 +622,9 @@
             ))}
           </div>
 
-          <form onSubmit={addItem} className="mt-auto grid grid-cols-[1fr_5rem_3rem] gap-2 pt-2" title="Füge einen neuen Posten hinzu">
-            <input 
-              placeholder="Name..." 
-              value={newItemName} 
-              onChange={e => setNewItemName(e.target.value)}
-              className="bg-white/50 dark:bg-black/40 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700 w-full"
-            />
-            <input 
-              type="number" 
-              placeholder="€" 
-              value={newItemVal} 
-              onChange={e => setNewItemVal(e.target.value)}
-              className="bg-white/50 dark:bg-black/40 rounded-lg px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700 w-full"
-            />
+          <form onSubmit={addItem} className="mt-auto grid grid-cols-[1fr_5rem_3rem] gap-2 pt-2">
+            <input placeholder="Name..." value={newItemName} onChange={e => setNewItemName(e.target.value)} className="bg-white/50 dark:bg-black/40 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700 w-full" />
+            <input type="number" placeholder="€" value={newItemVal} onChange={e => setNewItemVal(e.target.value)} className="bg-white/50 dark:bg-black/40 rounded-lg px-2 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 border border-white/20 dark:border-slate-700 w-full" />
             <button type="submit" className="bg-slate-800 dark:bg-slate-200 text-white dark:text-slate-900 rounded-lg hover:scale-105 transition-transform flex items-center justify-center w-full">
               <i className="ph-bold ph-plus text-lg"></i>
             </button>
@@ -642,30 +633,69 @@
       );
     }
 
-    function AnalyseView({ data, kpis, settings, calculateFIRE, darkMode }) {
+    function AnalyseView({ data, kpis, settings, calculateFIRE, darkMode, stealthMode }) {
       const allocChartRef = useRef(null);
       const incChartRef = useRef(null);
       const expChartRef = useRef(null);
       const assetChartRef = useRef(null);
+      const projChartRef = useRef(null);
       
       const [simBoost, setSimBoost] = useState(500);
 
-      const simFire = useMemo(() => {
-        return calculateFIRE(kpis.netWorth, kpis.invRec + simBoost, kpis.expRec, settings);
-      }, [kpis.netWorth, kpis.invRec, simBoost, kpis.expRec, settings]);
-      
+      const simFire = useMemo(() => calculateFIRE(kpis.netWorth, kpis.invRec + simBoost, kpis.expRec, settings), [kpis.netWorth, kpis.invRec, simBoost, kpis.expRec, settings]);
       const timeSaved = kpis.fireYears === 999 ? 0 : Math.max(0, kpis.fireYears - simFire);
+
+      // Stress Test Logic
+      const [stressLevel, setStressLevel] = useState(0); // 0 = normal, 1 = TradFi Crash (-30%), 2 = Crypto Winter (-60%)
+      const stressNetWorth = stressLevel === 1 ? kpis.netWorth * 0.7 : (stressLevel === 2 ? kpis.netWorth * 0.4 : kpis.netWorth);
+      const stressFire = calculateFIRE(stressNetWorth, kpis.invRec, kpis.expRec, settings);
+      const stressDelay = Math.max(0, stressFire - kpis.fireYears);
 
       useEffect(() => {
         if (!window.Chart) return;
         
-        let allocChartInst = null;
-        let incChartInst = null;
-        let expChartInst = null;
-        let assetChartInst = null;
-
         const legendColor = darkMode ? '#94a3b8' : '#475569';
         const fontFamily = '"Plus Jakarta Sans", sans-serif';
+
+        // Projection Chart (10 Years)
+        let projChartInst = null;
+        if (projChartRef.current) {
+          const years = Array.from({length: 11}, (_, i) => new Date().getFullYear() + i);
+          const projData = [];
+          let currentAss = kpis.netWorth;
+          const monthlyRate = (settings.fireROI / 100) / 12;
+          
+          for(let y=0; y<=10; y++) {
+             projData.push(currentAss);
+             for(let m=0; m<12; m++) currentAss = currentAss * (1 + monthlyRate) + kpis.invRec;
+          }
+
+          projChartInst = new window.Chart(projChartRef.current, {
+            type: 'line',
+            data: {
+              labels: years,
+              datasets: [{
+                label: 'Projizierter Net Worth (10 Jahre)',
+                data: projData,
+                borderColor: '#8b5cf6',
+                backgroundColor: 'rgba(139, 92, 246, 0.2)',
+                fill: true, tension: 0.4,
+                pointBackgroundColor: '#8b5cf6',
+              }]
+            },
+            options: {
+              responsive: true, maintainAspectRatio: false,
+              plugins: { 
+                legend: { display: false },
+                tooltip: { enabled: !stealthMode, callbacks: { label: (ctx) => formatCurrency(ctx.raw) } }
+              },
+              scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: legendColor, font: { family: fontFamily } } },
+                y: { display: !stealthMode, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: legendColor, font: { family: fontFamily } } }
+              }
+            }
+          });
+        }
 
         const createDonut = (ctx, items, colorScheme) => {
           if (!ctx) return null;
@@ -674,26 +704,12 @@
           
           return new window.Chart(ctx, {
             type: 'doughnut',
-            data: {
-              labels: sorted.map(i => i.name),
-              datasets: [{
-                data: sorted.map(i => i.val),
-                backgroundColor: colorScheme,
-                borderWidth: 0,
-                hoverOffset: 4
-              }]
-            },
+            data: { labels: sorted.map(i => i.name), datasets: [{ data: sorted.map(i => i.val), backgroundColor: colorScheme, borderWidth: 0, hoverOffset: 4 }] },
             options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              cutout: '70%',
+              responsive: true, maintainAspectRatio: false, cutout: '70%',
               plugins: {
-                legend: { 
-                  display: true, 
-                  position: 'bottom',
-                  labels: { color: legendColor, font: { family: fontFamily, size: 11 }, boxWidth: 12, padding: 15 }
-                },
-                tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${formatCurrency(ctx.raw)}` } }
+                legend: { display: true, position: 'bottom', labels: { color: legendColor, font: { family: fontFamily, size: 11 }, boxWidth: 12, padding: 15 } },
+                tooltip: { enabled: !stealthMode, callbacks: { label: (ctx) => ` ${ctx.label}: ${formatCurrency(ctx.raw)}` } }
               }
             }
           });
@@ -701,10 +717,11 @@
 
         const colors = ['#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6'];
         
-        if (incChartRef.current) incChartInst = createDonut(incChartRef.current, data.income, colors);
-        if (expChartRef.current) expChartInst = createDonut(expChartRef.current, data.expenses, colors.slice().reverse());
-        if (assetChartRef.current) assetChartInst = createDonut(assetChartRef.current, data.assets, ['#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#f43f5e']);
+        let incChartInst = createDonut(incChartRef.current, data.income, colors);
+        let expChartInst = createDonut(expChartRef.current, data.expenses, colors.slice().reverse());
+        let assetChartInst = createDonut(assetChartRef.current, data.assets, ['#eab308', '#22c55e', '#3b82f6', '#8b5cf6', '#f43f5e']);
 
+        let allocChartInst = null;
         if (allocChartRef.current) {
           const incTotal = (data.income || []).reduce((a,b)=>a+b.val,0);
           const expTotal = (data.expenses || []).reduce((a,b)=>a+b.val,0);
@@ -714,23 +731,14 @@
           allocChartInst = new window.Chart(allocChartRef.current, {
             type: 'doughnut',
             data: {
-              labels: ['Konsum (Expenses)', 'Aufbau (Invest)', 'Liquidität (Rest)'],
-              datasets: [{
-                data: [expTotal, invTotal, liqTotal],
-                backgroundColor: ['#f43f5e', '#8b5cf6', '#3b82f6'],
-                borderWidth: 0
-              }]
+              labels: ['Konsum', 'Invest', 'Liquidität'],
+              datasets: [{ data: [expTotal, invTotal, liqTotal], backgroundColor: ['#f43f5e', '#8b5cf6', '#3b82f6'], borderWidth: 0 }]
             },
             options: {
-              responsive: true,
-              maintainAspectRatio: false,
-              cutout: '60%',
-              plugins: {
-                legend: { 
-                  display: true, 
-                  position: 'bottom', 
-                  labels: { color: legendColor, font: { family: fontFamily, size: 11 }, boxWidth: 12, padding: 15 } 
-                },
+              responsive: true, maintainAspectRatio: false, cutout: '60%',
+              plugins: { 
+                legend: { display: true, position: 'bottom', labels: { color: legendColor, font: { family: fontFamily, size: 11 }, boxWidth: 12, padding: 15 } },
+                tooltip: { enabled: !stealthMode }
               }
             }
           });
@@ -741,81 +749,111 @@
           if (expChartInst) expChartInst.destroy();
           if (allocChartInst) allocChartInst.destroy();
           if (assetChartInst) assetChartInst.destroy();
+          if (projChartInst) projChartInst.destroy();
         };
-      }, [data, darkMode]);
+      }, [data, darkMode, stealthMode, kpis.netWorth, kpis.invRec, settings.fireROI]);
 
       return (
         <div className="flex flex-col gap-8">
           
-          {/* TACTICAL SIMULATOR */}
-          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 shadow-xl" title="Simuliere, wie sich eine höhere Sparquote auf deine Dauer bis zur finanziellen Freiheit auswirkt.">
-             <h3 className="text-2xl font-bold flex items-center gap-2 mb-2"><i className="ph-fill ph-flask text-blue-500"></i> Tactical FIRE Simulator</h3>
-             <p className="text-sm text-slate-500 mb-6">Was passiert, wenn du deine monatliche Sparrate aggressiv erhöhst? Teste den Hebel-Effekt auf deine Lebenszeit.</p>
-             
-             <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
-                <input 
-                  type="range" 
-                  min="0" 
-                  max="5000" 
-                  step="100" 
-                  value={simBoost} 
-                  onChange={e => setSimBoost(Number(e.target.value))} 
-                  className="flex-1 w-full md:w-auto" 
-                  title="Schiebe den Regler, um zusätzliches Investment-Kapital pro Monat zu simulieren."
-                />
-                <div className="font-black text-3xl w-40 text-right text-blue-600 dark:text-blue-400">
-                  +{formatCurrency(simBoost)}
-                </div>
-             </div>
-             
-             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-white/40 dark:bg-black/40 rounded-2xl p-5 border border-white/20 dark:border-slate-800">
-                   <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">Neuer FIRE Zeitpunkt</div>
-                   <div className="text-3xl font-black text-slate-800 dark:text-white mt-1">
-                     {simFire === 999 ? 'N/A' : `${simFire.toFixed(1)} Jahre`}
-                   </div>
-                </div>
-                <div className="bg-white/40 dark:bg-black/40 rounded-2xl p-5 border border-white/20 dark:border-slate-800">
-                   <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">Gewonnene Lebenszeit</div>
-                   <div className="text-3xl font-black text-green-500 mt-1">
-                     {timeSaved > 0 ? `${timeSaved.toFixed(1)} Jahre gespart` : 'Kein Effekt'}
-                   </div>
-                </div>
+          {/* SIMULATORS & PROJECTIONS ROW */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            {/* TACTICAL SIMULATOR */}
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 shadow-xl flex flex-col justify-between" title="Simuliere, wie sich eine höhere Sparquote auswirkt.">
+               <div>
+                 <h3 className="text-2xl font-bold flex items-center gap-2 mb-2"><i className="ph-fill ph-flask text-blue-500"></i> Tactical FIRE Simulator</h3>
+                 <p className="text-sm text-slate-500 mb-6">Was passiert, wenn du deine monatliche Sparrate aggressiv erhöhst?</p>
+               </div>
+               
+               <div className="flex flex-col md:flex-row items-center gap-6 mb-6">
+                  <input type="range" min="0" max="5000" step="100" value={simBoost} onChange={e => setSimBoost(Number(e.target.value))} className="flex-1 w-full md:w-auto" />
+                  <div className="font-black text-3xl w-40 text-right text-blue-600 dark:text-blue-400 sensitive">
+                    +{formatCurrency(simBoost)}
+                  </div>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white/40 dark:bg-black/40 rounded-2xl p-4 border border-white/20 dark:border-slate-800">
+                     <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">Neuer Zeitpunkt</div>
+                     <div className="text-2xl font-black text-slate-800 dark:text-white mt-1">{simFire === 999 ? 'N/A' : `${simFire.toFixed(1)} Jahre`}</div>
+                  </div>
+                  <div className="bg-white/40 dark:bg-black/40 rounded-2xl p-4 border border-white/20 dark:border-slate-800">
+                     <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">Gewonnene Lebenszeit</div>
+                     <div className="text-2xl font-black text-green-500 mt-1">{timeSaved > 0 ? `${timeSaved.toFixed(1)} J. gespart` : 'Kein Effekt'}</div>
+                  </div>
+               </div>
+            </div>
+
+            {/* STRESS TEST MATRIX */}
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 shadow-xl flex flex-col justify-between" title="Simuliert harte Markteinbrüche auf dein aktuelles Portfolio.">
+               <div>
+                 <h3 className="text-2xl font-bold flex items-center gap-2 mb-2"><i className="ph-fill ph-warning-octagon text-red-500"></i> Stress Test Matrix</h3>
+                 <p className="text-sm text-slate-500 mb-6">Wie krisenfest ist dein Setup? Simuliere einen Portfolio-Drawdown.</p>
+               </div>
+               
+               <div className="flex gap-2 mb-6">
+                 <button onClick={() => setStressLevel(0)} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${stressLevel===0 ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900' : 'bg-white/50 dark:bg-black/40 hover:bg-white dark:hover:bg-slate-800'}`}>Normal</button>
+                 <button onClick={() => setStressLevel(1)} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${stressLevel===1 ? 'bg-orange-500 text-white' : 'bg-white/50 dark:bg-black/40 hover:bg-white dark:hover:bg-slate-800'}`}>TradFi Crash (-30%)</button>
+                 <button onClick={() => setStressLevel(2)} className={`flex-1 py-2 text-sm font-bold rounded-xl transition ${stressLevel===2 ? 'bg-red-600 text-white' : 'bg-white/50 dark:bg-black/40 hover:bg-white dark:hover:bg-slate-800'}`}>Crypto Winter (-60%)</button>
+               </div>
+               
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-white/40 dark:bg-black/40 rounded-2xl p-4 border border-white/20 dark:border-slate-800">
+                     <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">Rest-Portfolio</div>
+                     <div className="text-2xl font-black text-slate-800 dark:text-white mt-1 sensitive">{formatCurrency(stressNetWorth)}</div>
+                  </div>
+                  <div className="bg-white/40 dark:bg-black/40 rounded-2xl p-4 border border-white/20 dark:border-slate-800">
+                     <div className="text-sm font-semibold text-slate-500 dark:text-slate-400">Verzögerung bis FIRE</div>
+                     <div className={`text-2xl font-black mt-1 ${stressDelay > 0 ? 'text-red-500' : 'text-slate-800 dark:text-white'}`}>
+                       {stressDelay > 0 ? `+${stressDelay.toFixed(1)} Jahre` : 'Kein Effekt'}
+                     </div>
+                  </div>
+               </div>
+            </div>
+
+          </div>
+
+          {/* 10 YEAR PROJECTION */}
+          <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 shadow-xl">
+             <h3 className="text-xl font-bold mb-4 w-full text-center">10-Year Wealth Projection</h3>
+             <div className="w-full flex-1 min-h-[300px]">
+                <canvas ref={projChartRef}></canvas>
              </div>
           </div>
 
-          {/* CHARTS */}
+          {/* DONUT CHARTS */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Zeigt, wie dein verdientes Geld zwischen Lebenshaltung (Konsum), Vermögensaufbau (Invest) und Rest-Liquidität aufgeteilt wird.">
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
               <h3 className="text-xl font-bold mb-4 w-full text-center">Cashflow Intelligence</h3>
               <div className="w-full flex-1 min-h-[250px] flex justify-center relative">
                  <canvas ref={allocChartRef}></canvas>
                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col pb-8">
                    <span className="text-xs text-slate-500">Income</span>
-                   <span className="font-bold text-lg">{formatCurrency((data.income || []).reduce((a,b)=>a+b.val,0))}</span>
+                   <span className="font-bold text-lg sensitive">{formatCurrency((data.income || []).reduce((a,b)=>a+b.val,0))}</span>
                  </div>
               </div>
             </div>
             
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Die Gewichtung und Verteilung deiner absoluten Vermögenswerte.">
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
               <h3 className="text-xl font-bold mb-4 w-full text-center">Asset Allocation</h3>
               <div className="w-full flex-1 min-h-[250px] flex justify-center relative">
                  <canvas ref={assetChartRef}></canvas>
                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col pb-8">
                    <span className="text-xs text-slate-500">Net Worth</span>
-                   <span className="font-bold text-lg">{formatCurrency((data.assets || []).reduce((a,b)=>a+b.val,0))}</span>
+                   <span className="font-bold text-lg sensitive">{formatCurrency((data.assets || []).reduce((a,b)=>a+b.val,0))}</span>
                  </div>
               </div>
             </div>
             
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Visuelle Aufschlüsselung deiner Einnahmequellen.">
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
               <h3 className="text-xl font-bold mb-4 w-full text-center">Income Split</h3>
               <div className="w-full flex-1 min-h-[250px] flex justify-center">
                  <canvas ref={incChartRef}></canvas>
               </div>
             </div>
             
-            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center" title="Visuelle Aufschlüsselung deiner Hauptkostenpunkte.">
+            <div className="bg-white/20 dark:bg-black/20 p-6 rounded-3xl border border-white/30 dark:border-white/5 flex flex-col items-center">
               <h3 className="text-xl font-bold mb-4 w-full text-center">Expense Split</h3>
               <div className="w-full flex-1 min-h-[250px] flex justify-center">
                  <canvas ref={expChartRef}></canvas>
@@ -827,7 +865,7 @@
       );
     }
 
-    function YearView({ db, year }) {
+    function YearView({ db, year, stealthMode }) {
       const chartRef = useRef(null);
 
       const stats = useMemo(() => {
@@ -907,15 +945,18 @@
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            plugins: { legend: { labels: { color: '#888', font: { family: fontFamily } } } },
+            plugins: { 
+              legend: { labels: { color: '#888', font: { family: fontFamily } } },
+              tooltip: { enabled: !stealthMode }
+            },
             scales: {
               x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', font: { family: fontFamily } } },
               y: { 
-                type: 'linear', display: true, position: 'left',
+                type: 'linear', display: !stealthMode, position: 'left',
                 grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#888', font: { family: fontFamily } }
               },
               y1: {
-                type: 'linear', display: true, position: 'right',
+                type: 'linear', display: !stealthMode, position: 'right',
                 grid: { drawOnChartArea: false }, ticks: { color: '#888', font: { family: fontFamily } }
               }
             }
@@ -925,30 +966,30 @@
         return () => {
           chartInst.destroy();
         };
-      }, [stats]);
+      }, [stats, stealthMode]);
 
       return (
         <div className="flex flex-col gap-6 h-full" title="Jahresauswertung und Verfolgung deines Vermögensaufbaus.">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl" title="Durchschnittliches monatliches Einkommen in diesem Jahr (YTD).">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
               <div className="text-sm text-slate-500">Ø Income</div>
-              <div className="text-xl font-bold">{formatCurrency(stats.avgInc)}</div>
+              <div className="text-xl font-bold sensitive">{formatCurrency(stats.avgInc)}</div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl" title="Durchschnittliche monatliche Ausgaben in diesem Jahr (YTD).">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
               <div className="text-sm text-slate-500">Ø Expenses</div>
-              <div className="text-xl font-bold">{formatCurrency(stats.avgExp)}</div>
+              <div className="text-xl font-bold sensitive">{formatCurrency(stats.avgExp)}</div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl" title="Durchschnittliches monatliches Investmentvolumen in diesem Jahr (YTD).">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl">
               <div className="text-sm text-slate-500">Ø Invest</div>
-              <div className="text-xl font-bold">{formatCurrency(stats.avgInv)}</div>
+              <div className="text-xl font-bold sensitive">{formatCurrency(stats.avgInv)}</div>
             </div>
-            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl border border-blue-500/30" title="Durchschnittliche Sparquote des gesamten Jahreslaufes.">
+            <div className="bg-white/20 dark:bg-black/20 p-4 rounded-2xl border border-blue-500/30">
               <div className="text-sm text-slate-500">Ø Sparquote</div>
               <div className="text-xl font-bold text-blue-500">{stats.avgSR.toFixed(1)}%</div>
             </div>
           </div>
 
-          <div className="flex-1 min-h-[300px] bg-white/10 dark:bg-black/10 rounded-3xl p-4 border border-white/20 dark:border-white/5" title="Historischer Verlauf: Dein Vermögen (Net Worth) vs. den produzierten Cashflow pro Monat.">
+          <div className="flex-1 min-h-[300px] bg-white/10 dark:bg-black/10 rounded-3xl p-4 border border-white/20 dark:border-white/5">
             <canvas ref={chartRef}></canvas>
           </div>
         </div>
