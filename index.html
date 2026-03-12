@@ -465,12 +465,12 @@
 
             {/* NAV BAR & HEADER */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white/40 dark:bg-slate-900/40 backdrop-blur-xl rounded-3xl p-4 border border-white/40 dark:border-slate-700/50 shadow-xl">
-              <div className="flex items-center gap-2 bg-white/50 dark:bg-black/40 p-1 rounded-2xl flex-wrap justify-center" title="Wähle den Monat aus, den du analysieren möchtest.">
+              <div className="grid grid-cols-6 sm:grid-cols-12 gap-1 bg-white/50 dark:bg-black/40 p-1.5 rounded-2xl w-full md:w-auto" title="Wähle den Monat aus, den du analysieren möchtest.">
                 {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
                   <button 
                     key={m}
                     onClick={() => setCurrentMonth(m)}
-                    className={`w-10 h-10 rounded-xl text-sm font-semibold transition-all ${currentMonth === m ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'hover:bg-white/50 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400'}`}
+                    className={`h-10 rounded-xl text-sm font-semibold transition-all ${currentMonth === m ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/30' : 'hover:bg-white/50 dark:hover:bg-white/10 text-slate-600 dark:text-slate-400'}`}
                   >
                     {new Date(2000, m - 1, 1).toLocaleString('de-DE', { month: 'short' })}
                   </button>
@@ -827,20 +827,8 @@
       const svgRef = useRef(null);
       const containerRef = useRef(null);
       const [hoveredFlow, setHoveredFlow] = useState(null);
-      const [dims, setDims] = useState({ width: 900, height: 520 });
+      const [dims, setDims] = useState({ width: 900, height: 500 });
       const [tooltip, setTooltip] = useState(null);
-
-      useEffect(() => {
-        const updateDims = () => {
-          if (containerRef.current) {
-            const w = containerRef.current.offsetWidth;
-            setDims({ width: Math.max(600, w), height: Math.max(420, Math.min(580, w * 0.55)) });
-          }
-        };
-        updateDims();
-        window.addEventListener('resize', updateDims);
-        return () => window.removeEventListener('resize', updateDims);
-      }, []);
 
       const flowData = useMemo(() => {
         const incomeItems = (data.income || []).filter(i => i.val > 0).sort((a,b) => b.val - a.val);
@@ -855,6 +843,26 @@
         return { incomeItems, expenseItems, investItems, totalIncome, totalExpenses, totalInvest, liquidity };
       }, [data]);
 
+      // Dynamic height based on item count
+      const totalRightItems = flowData.expenseItems.length + flowData.investItems.length + (flowData.liquidity > 0 ? 1 : 0);
+      const maxItems = Math.max(flowData.incomeItems.length, totalRightItems);
+
+      useEffect(() => {
+        const updateDims = () => {
+          if (containerRef.current) {
+            const w = containerRef.current.offsetWidth;
+            // Scale height based on number of items: min 320, grows with items, max 700
+            const itemBasedH = Math.max(320, maxItems * 52 + 80);
+            const aspectH = w * 0.45;
+            const h = Math.min(700, Math.max(itemBasedH, aspectH));
+            setDims({ width: Math.max(500, w), height: h });
+          }
+        };
+        updateDims();
+        window.addEventListener('resize', updateDims);
+        return () => window.removeEventListener('resize', updateDims);
+      }, [maxItems]);
+
       if (flowData.totalIncome === 0) {
         return (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
@@ -866,71 +874,76 @@
       }
 
       const { width: W, height: H } = dims;
-      const PAD = { top: 30, bottom: 30, left: 20, right: 20 };
-      const NODE_W = 18;
-      const NODE_R = 6;
+      // Generous padding for labels
+      const LABEL_SPACE_LEFT = Math.min(180, W * 0.18);
+      const LABEL_SPACE_RIGHT = Math.min(180, W * 0.18);
+      const PAD = { top: 40, bottom: 40, left: LABEL_SPACE_LEFT, right: LABEL_SPACE_RIGHT };
+      const NODE_W = 14;
+      const NODE_R = 5;
+      const NODE_GAP = 6;
+
       const COL_LEFT = PAD.left;
       const COL_MID = W / 2 - NODE_W / 2;
       const COL_RIGHT = W - PAD.right - NODE_W;
       const usableH = H - PAD.top - PAD.bottom;
 
-      // Left column: income sources
+      // --- LEFT COLUMN: income sources ---
       const incNodes = [];
       const incTotal = flowData.totalIncome;
+      const incCount = flowData.incomeItems.length;
+      const incAvailH = usableH - (incCount - 1) * NODE_GAP;
+
       let incY = PAD.top;
-      const incGap = Math.max(4, (usableH - (flowData.incomeItems.length * 2)) / Math.max(1, flowData.incomeItems.length));
-      
       flowData.incomeItems.forEach((item, i) => {
-        const h = Math.max(8, (item.val / incTotal) * (usableH - (flowData.incomeItems.length - 1) * 4));
-        incNodes.push({ ...item, x: COL_LEFT, y: incY, h, color: ['#3b82f6','#6366f1','#8b5cf6','#a855f7','#2563eb','#4f46e5'][i % 6] });
-        incY += h + 4;
+        const h = Math.max(14, (item.val / incTotal) * incAvailH);
+        incNodes.push({ ...item, x: COL_LEFT, y: incY, h, color: ['#3b82f6','#6366f1','#8b5cf6','#a855f7','#2563eb','#4f46e5','#818cf8','#6d28d9'][i % 8] });
+        incY += h + NODE_GAP;
       });
-      // Center the income column vertically
-      const incTotalH = incY - 4 - PAD.top;
+      const incTotalH = incY - NODE_GAP - PAD.top;
       const incOffset = (usableH - incTotalH) / 2;
       incNodes.forEach(n => n.y += incOffset);
 
-      // Middle node: total income hub
-      const midNodeH = usableH * 0.85;
+      // --- MIDDLE HUB ---
+      const midNodeH = usableH * 0.9;
       const midNode = { x: COL_MID, y: PAD.top + (usableH - midNodeH) / 2, h: midNodeH };
 
-      // Right column: expenses, investments, liquidity
+      // --- RIGHT COLUMN: expenses, investments, liquidity ---
       const rightItems = [];
       const outTotal = flowData.totalExpenses + flowData.totalInvest + flowData.liquidity;
-      
-      // Group: Expenses
+
       flowData.expenseItems.forEach((item, i) => {
         rightItems.push({ ...item, type: 'expense', color: ['#f43f5e','#e11d48','#fb7185','#f97316','#ef4444','#dc2626','#be123c','#b91c1c'][i % 8] });
       });
-      // Group: Investments  
       flowData.investItems.forEach((item, i) => {
         rightItems.push({ ...item, type: 'invest', color: ['#8b5cf6','#a855f7','#7c3aed','#6d28d9'][i % 4] });
       });
-      // Liquidity
       if (flowData.liquidity > 0) {
         rightItems.push({ name: 'Liquidität', val: flowData.liquidity, type: 'liquidity', color: '#22c55e' });
       }
 
+      const rightCount = rightItems.length;
+      const rightAvailH = usableH - (rightCount - 1) * NODE_GAP;
       const rightNodes = [];
       let rightY = PAD.top;
       rightItems.forEach((item, i) => {
-        const h = Math.max(8, (item.val / outTotal) * (usableH - (rightItems.length - 1) * 4));
+        const h = Math.max(14, (item.val / outTotal) * rightAvailH);
         rightNodes.push({ ...item, x: COL_RIGHT, y: rightY, h });
-        rightY += h + 4;
+        rightY += h + NODE_GAP;
       });
-      const rightTotalH = rightY - 4 - PAD.top;
+      const rightTotalH = rightY - NODE_GAP - PAD.top;
       const rightOffset = (usableH - rightTotalH) / 2;
       rightNodes.forEach(n => n.y += rightOffset);
 
-      // Generate curved paths from income → middle
+      // --- CURVED PATHS ---
       const generatePath = (fromX, fromY, fromH, toX, toY, toH) => {
         const x1 = fromX + NODE_W;
         const x2 = toX;
-        const cpx = (x1 + x2) / 2;
-        return `M ${x1},${fromY} C ${cpx},${fromY} ${cpx},${toY} ${x2},${toY} L ${x2},${toY + toH} C ${cpx},${toY + toH} ${cpx},${fromY + fromH} ${x1},${fromY + fromH} Z`;
+        const cpx1 = x1 + (x2 - x1) * 0.4;
+        const cpx2 = x1 + (x2 - x1) * 0.6;
+        return `M ${x1},${fromY} C ${cpx1},${fromY} ${cpx2},${toY} ${x2},${toY} L ${x2},${toY + toH} C ${cpx2},${toY + toH} ${cpx1},${fromY + fromH} ${x1},${fromY + fromH} Z`;
       };
 
-      // Map income flows to middle node
+      // Income → Hub
       const incFlows = [];
       let midYIn = midNode.y;
       incNodes.forEach((inc) => {
@@ -938,15 +951,12 @@
         const bandH = share * midNode.h;
         incFlows.push({
           path: generatePath(inc.x, inc.y, inc.h, midNode.x, midYIn, bandH),
-          color: inc.color,
-          name: inc.name,
-          val: inc.val,
-          id: `inc-${inc.name}`
+          color: inc.color, name: inc.name, val: inc.val, id: `inc-${inc.name}`
         });
         midYIn += bandH;
       });
 
-      // Map middle node to right nodes
+      // Hub → Right
       const outFlows = [];
       let midYOut = midNode.y;
       rightNodes.forEach((rn) => {
@@ -954,11 +964,7 @@
         const bandH = share * midNode.h;
         outFlows.push({
           path: generatePath(midNode.x, midYOut, bandH, rn.x, rn.y, rn.h),
-          color: rn.color,
-          name: rn.name,
-          val: rn.val,
-          type: rn.type,
-          id: `out-${rn.name}`
+          color: rn.color, name: rn.name, val: rn.val, type: rn.type, id: `out-${rn.name}`
         });
         midYOut += bandH;
       });
@@ -966,61 +972,54 @@
       const handleMouseEnter = (flow, e) => {
         setHoveredFlow(flow.id);
         const rect = containerRef.current.getBoundingClientRect();
-        setTooltip({
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top - 10,
-          name: flow.name,
-          val: flow.val,
-          pct: ((flow.val / incTotal) * 100).toFixed(1)
-        });
+        setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top - 10, name: flow.name, val: flow.val, pct: ((flow.val / incTotal) * 100).toFixed(1) });
       };
-
       const handleMouseMove = (e) => {
         if (tooltip) {
           const rect = containerRef.current.getBoundingClientRect();
           setTooltip(prev => prev ? { ...prev, x: e.clientX - rect.left, y: e.clientY - rect.top - 10 } : null);
         }
       };
-
-      const handleMouseLeave = () => {
-        setHoveredFlow(null);
-        setTooltip(null);
-      };
+      const handleMouseLeave = () => { setHoveredFlow(null); setTooltip(null); };
 
       const textColor = darkMode ? '#e2e8f0' : '#1e293b';
       const subTextColor = darkMode ? '#94a3b8' : '#64748b';
       const hubGradientColors = darkMode ? ['#1e3a5f', '#1e293b'] : ['#dbeafe', '#e0e7ff'];
 
+      // Adaptive font size
+      const fontSize = Math.max(10, Math.min(13, W / 80));
+      const subFontSize = fontSize - 1;
+
       return (
         <div ref={containerRef} className="relative w-full" style={{ minHeight: H }} onMouseMove={handleMouseMove}>
-          <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+          <svg ref={svgRef} width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" style={{ overflow: 'visible' }}>
             <defs>
               <linearGradient id="hubGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={hubGradientColors[0]} />
                 <stop offset="100%" stopColor={hubGradientColors[1]} />
               </linearGradient>
-              {/* Glow filter */}
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                <feMerge>
-                  <feMergeNode in="coloredBlur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
+              {/* Per-flow gradients for smoother look */}
+              {incFlows.map(f => (
+                <linearGradient key={`grad-${f.id}`} id={`grad-${f.id}`} x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor={f.color} />
+                  <stop offset="100%" stopColor={f.color} stopOpacity="0.6" />
+                </linearGradient>
+              ))}
+              {outFlows.map(f => (
+                <linearGradient key={`grad-${f.id}`} id={`grad-${f.id}`} x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor={f.color} stopOpacity="0.6" />
+                  <stop offset="100%" stopColor={f.color} />
+                </linearGradient>
+              ))}
             </defs>
 
             {/* Income flow paths */}
             {incFlows.map((flow) => (
               <path 
-                key={flow.id}
-                d={flow.path}
-                fill={flow.color}
+                key={flow.id} d={flow.path}
+                fill={`url(#grad-${flow.id})`}
                 className="sankey-flow-path"
-                style={{ 
-                  opacity: hoveredFlow ? (hoveredFlow === flow.id ? 0.95 : 0.2) : 0.55,
-                  transition: 'opacity 0.3s ease',
-                  cursor: 'pointer'
-                }}
+                style={{ opacity: hoveredFlow ? (hoveredFlow === flow.id ? 0.9 : 0.15) : 0.5, transition: 'opacity 0.3s ease', cursor: 'pointer' }}
                 onMouseEnter={(e) => handleMouseEnter(flow, e)}
                 onMouseLeave={handleMouseLeave}
               />
@@ -1029,79 +1028,67 @@
             {/* Output flow paths */}
             {outFlows.map((flow) => (
               <path 
-                key={flow.id}
-                d={flow.path}
-                fill={flow.color}
+                key={flow.id} d={flow.path}
+                fill={`url(#grad-${flow.id})`}
                 className="sankey-flow-path"
-                style={{ 
-                  opacity: hoveredFlow ? (hoveredFlow === flow.id ? 0.95 : 0.2) : 0.55,
-                  transition: 'opacity 0.3s ease',
-                  cursor: 'pointer'
-                }}
+                style={{ opacity: hoveredFlow ? (hoveredFlow === flow.id ? 0.9 : 0.15) : 0.5, transition: 'opacity 0.3s ease', cursor: 'pointer' }}
                 onMouseEnter={(e) => handleMouseEnter(flow, e)}
                 onMouseLeave={handleMouseLeave}
               />
             ))}
 
-            {/* Income nodes (left) */}
+            {/* Income nodes (left) with labels to the left */}
             {incNodes.map((n, i) => (
-              <g key={`inc-node-${i}`} className="sankey-node" style={{ cursor: 'default' }}>
+              <g key={`inc-node-${i}`} className="sankey-node">
                 <rect x={n.x} y={n.y} width={NODE_W} height={n.h} rx={NODE_R} fill={n.color} />
-                <text x={n.x + NODE_W + 8} y={n.y + n.h / 2 - 6} fill={textColor} fontSize="12" fontWeight="600" dominantBaseline="middle" className="sankey-label">{n.name}</text>
-                <text x={n.x + NODE_W + 8} y={n.y + n.h / 2 + 8} fill={subTextColor} fontSize="11" dominantBaseline="middle" className={`sankey-label ${stealthMode ? 'sensitive' : ''}`}>{formatCurrency(n.val)}</text>
+                <text x={n.x - 10} y={n.y + n.h / 2 - 1} fill={textColor} fontSize={fontSize} fontWeight="600" textAnchor="end" dominantBaseline="middle" className="sankey-label">{n.name}</text>
+                <text x={n.x - 10} y={n.y + n.h / 2 + fontSize} fill={subTextColor} fontSize={subFontSize} textAnchor="end" dominantBaseline="middle" className={`sankey-label ${stealthMode ? 'sensitive' : ''}`}>{formatCurrency(n.val)}</text>
               </g>
             ))}
 
             {/* Middle hub node */}
             <rect x={midNode.x} y={midNode.y} width={NODE_W} height={midNode.h} rx={NODE_R} fill="url(#hubGrad)" stroke={darkMode ? '#334155' : '#cbd5e1'} strokeWidth="1.5" />
-            <text x={midNode.x + NODE_W / 2} y={midNode.y - 10} fill={textColor} fontSize="13" fontWeight="800" textAnchor="middle" className="sankey-label">INCOME</text>
-            <text x={midNode.x + NODE_W / 2} y={midNode.y + midNode.h + 18} fill={subTextColor} fontSize="12" fontWeight="700" textAnchor="middle" className={`sankey-label ${stealthMode ? 'sensitive' : ''}`}>{formatCurrency(incTotal)}</text>
+            <text x={midNode.x + NODE_W / 2} y={midNode.y - 14} fill={textColor} fontSize={fontSize + 1} fontWeight="800" textAnchor="middle" className="sankey-label" letterSpacing="0.05em">INCOME</text>
+            <text x={midNode.x + NODE_W / 2} y={midNode.y + midNode.h + 20} fill={subTextColor} fontSize={fontSize} fontWeight="700" textAnchor="middle" className={`sankey-label ${stealthMode ? 'sensitive' : ''}`}>{formatCurrency(incTotal)}</text>
 
-            {/* Right nodes (expenses, invest, liquidity) */}
+            {/* Right nodes with labels to the right */}
             {rightNodes.map((n, i) => {
-              const typeIcon = n.type === 'expense' ? '↗' : n.type === 'invest' ? '◆' : '●';
+              const typeLabel = n.type === 'expense' ? '' : n.type === 'invest' ? '◆ ' : '● ';
               return (
-                <g key={`right-node-${i}`} className="sankey-node" style={{ cursor: 'default' }}>
+                <g key={`right-node-${i}`} className="sankey-node">
                   <rect x={n.x} y={n.y} width={NODE_W} height={n.h} rx={NODE_R} fill={n.color} />
-                  <text x={n.x - 8} y={n.y + n.h / 2 - 6} fill={textColor} fontSize="12" fontWeight="600" textAnchor="end" dominantBaseline="middle" className="sankey-label">{n.name}</text>
-                  <text x={n.x - 8} y={n.y + n.h / 2 + 8} fill={subTextColor} fontSize="11" textAnchor="end" dominantBaseline="middle" className={`sankey-label ${stealthMode ? 'sensitive' : ''}`}>{formatCurrency(n.val)} ({((n.val / incTotal) * 100).toFixed(0)}%)</text>
+                  <text x={n.x + NODE_W + 10} y={n.y + n.h / 2 - 1} fill={textColor} fontSize={fontSize} fontWeight="600" dominantBaseline="middle" className="sankey-label">{typeLabel}{n.name}</text>
+                  <text x={n.x + NODE_W + 10} y={n.y + n.h / 2 + fontSize} fill={subTextColor} fontSize={subFontSize} dominantBaseline="middle" className={`sankey-label ${stealthMode ? 'sensitive' : ''}`}>{formatCurrency(n.val)} · {((n.val / incTotal) * 100).toFixed(0)}%</text>
                 </g>
               );
             })}
 
-            {/* Section labels on the right */}
+            {/* Section bracket labels */}
             {(() => {
               const sections = [];
-              let expStart = null, expEnd = null, invStart = null, invEnd = null, liqStart = null;
+              let expStart = null, expEnd = null, invStart = null, invEnd = null;
               rightNodes.forEach(n => {
-                if (n.type === 'expense') {
-                  if (expStart === null) expStart = n.y;
-                  expEnd = n.y + n.h;
-                }
-                if (n.type === 'invest') {
-                  if (invStart === null) invStart = n.y;
-                  invEnd = n.y + n.h;
-                }
-                if (n.type === 'liquidity') liqStart = n.y;
+                if (n.type === 'expense') { if (expStart === null) expStart = n.y; expEnd = n.y + n.h; }
+                if (n.type === 'invest') { if (invStart === null) invStart = n.y; invEnd = n.y + n.h; }
               });
 
-              const labelX = COL_RIGHT + NODE_W + 10;
-              
+              const bracketX = COL_RIGHT - 14;
+
               if (expStart !== null && flowData.expenseItems.length > 1) {
-                const midY = (expStart + expEnd) / 2;
                 sections.push(
-                  <g key="exp-label">
-                    <line x1={labelX - 2} y1={expStart} x2={labelX - 2} y2={expEnd} stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
-                    <text x={labelX + 4} y={midY} fill="#f43f5e" fontSize="10" fontWeight="800" dominantBaseline="middle" textAnchor="start" opacity="0.7" letterSpacing="0.05em">EXPENSES</text>
+                  <g key="exp-bracket" opacity="0.35">
+                    <line x1={bracketX} y1={expStart + 2} x2={bracketX} y2={expEnd - 2} stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" />
+                    <line x1={bracketX} y1={expStart + 2} x2={bracketX + 5} y2={expStart + 2} stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" />
+                    <line x1={bracketX} y1={expEnd - 2} x2={bracketX + 5} y2={expEnd - 2} stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" />
                   </g>
                 );
               }
               if (invStart !== null && flowData.investItems.length > 1) {
-                const midY = (invStart + invEnd) / 2;
                 sections.push(
-                  <g key="inv-label">
-                    <line x1={labelX - 2} y1={invStart} x2={labelX - 2} y2={invEnd} stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" opacity="0.4" />
-                    <text x={labelX + 4} y={midY} fill="#8b5cf6" fontSize="10" fontWeight="800" dominantBaseline="middle" textAnchor="start" opacity="0.7" letterSpacing="0.05em">INVEST</text>
+                  <g key="inv-bracket" opacity="0.35">
+                    <line x1={bracketX} y1={invStart + 2} x2={bracketX} y2={invEnd - 2} stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" />
+                    <line x1={bracketX} y1={invStart + 2} x2={bracketX + 5} y2={invStart + 2} stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" />
+                    <line x1={bracketX} y1={invEnd - 2} x2={bracketX + 5} y2={invEnd - 2} stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" />
                   </g>
                 );
               }
@@ -1113,12 +1100,7 @@
           {tooltip && !stealthMode && (
             <div 
               className="absolute pointer-events-none z-50 bg-slate-900/95 dark:bg-black/95 text-white px-4 py-3 rounded-xl shadow-2xl border border-slate-700 backdrop-blur-sm"
-              style={{ 
-                left: tooltip.x, 
-                top: tooltip.y, 
-                transform: 'translate(-50%, -100%)',
-                minWidth: '140px'
-              }}
+              style={{ left: tooltip.x, top: tooltip.y, transform: 'translate(-50%, -100%)', minWidth: '140px' }}
             >
               <div className="font-bold text-sm">{tooltip.name}</div>
               <div className="text-blue-300 font-bold text-lg">{formatCurrency(tooltip.val)}</div>
