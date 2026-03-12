@@ -328,6 +328,104 @@
         } catch (e) { alert("Export blockiert."); }
       };
 
+      // === JSON BACKUP IMPORT ===
+      const fileInputRef = useRef(null);
+      const [importPreview, setImportPreview] = useState(null); // { db, settings, fileName, years, months }
+
+      const handleFileSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+          try {
+            const parsed = JSON.parse(evt.target.result);
+            
+            // Validate structure
+            if (!parsed.db && !parsed.settings) {
+              // Maybe it's a raw db without wrapper
+              if (typeof parsed === 'object' && Object.keys(parsed).some(k => /^\d{4}$/.test(k))) {
+                // Looks like a raw db object
+                const years = Object.keys(parsed).filter(k => /^\d{4}$/.test(k));
+                let totalMonths = 0;
+                years.forEach(y => { totalMonths += Object.keys(parsed[y]).length; });
+                setImportPreview({ db: parsed, settings: null, fileName: file.name, years: years.length, months: totalMonths });
+              } else {
+                alert("Ungültiges Format: Die JSON-Datei enthält keine erkennbaren Daten.");
+              }
+              return;
+            }
+
+            const importDb = parsed.db || {};
+            const importSettings = parsed.settings || null;
+            const years = Object.keys(importDb).filter(k => /^\d{4}$/.test(k));
+            let totalMonths = 0;
+            let totalItems = 0;
+            years.forEach(y => {
+              Object.keys(importDb[y]).forEach(m => {
+                totalMonths++;
+                CATEGORIES.forEach(cat => {
+                  totalItems += (importDb[y]?.[m]?.[cat] || []).length;
+                });
+              });
+            });
+
+            setImportPreview({ db: importDb, settings: importSettings, fileName: file.name, years: years.length, months: totalMonths, items: totalItems });
+          } catch (err) {
+            alert("Fehler beim Lesen der Datei: " + err.message);
+          }
+        };
+        reader.readAsText(file);
+        // Reset so the same file can be re-selected
+        e.target.value = '';
+      };
+
+      const confirmImportJSON = (mode) => {
+        if (!importPreview) return;
+
+        if (mode === 'replace') {
+          // Full replace
+          if (importPreview.db) setDb(importPreview.db);
+          if (importPreview.settings) setSettings(importPreview.settings);
+        } else if (mode === 'merge') {
+          // Smart merge: only add missing months, don't overwrite existing
+          setDb(prev => {
+            const merged = { ...prev };
+            Object.keys(importPreview.db).forEach(year => {
+              if (!merged[year]) {
+                merged[year] = { ...importPreview.db[year] };
+              } else {
+                Object.keys(importPreview.db[year]).forEach(month => {
+                  if (!merged[year][month]) {
+                    merged[year][month] = importPreview.db[year][month];
+                  } else {
+                    // Month exists: merge each category
+                    const existing = merged[year][month];
+                    const incoming = importPreview.db[year][month];
+                    CATEGORIES.forEach(cat => {
+                      const existingItems = existing[cat] || [];
+                      const incomingItems = incoming[cat] || [];
+                      incomingItems.forEach(item => {
+                        const exists = existingItems.find(e => e.name.trim().toLowerCase() === item.name.trim().toLowerCase());
+                        if (!exists) {
+                          existingItems.push({ ...item, id: Date.now() + Math.random() });
+                        }
+                      });
+                      existing[cat] = existingItems;
+                    });
+                    merged[year][month] = existing;
+                  }
+                });
+              }
+            });
+            return merged;
+          });
+          if (importPreview.settings) setSettings(importPreview.settings);
+        }
+
+        setImportPreview(null);
+      };
+
       if (!isClient) return <div className="min-h-screen flex items-center justify-center font-bold">Lade Engine...</div>;
 
       return (
@@ -411,6 +509,10 @@
                   <button onClick={exportJSON} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="Lokales JSON-Backup erstellen.">
                     <i className="ph-bold ph-download-simple text-lg"></i>
                   </button>
+                  <button onClick={() => fileInputRef.current?.click()} className="p-2 hover:bg-white/50 dark:hover:bg-white/10 rounded-xl transition text-slate-600 dark:text-slate-400" title="JSON-Backup importieren & wiederherstellen.">
+                    <i className="ph-bold ph-upload-simple text-lg"></i>
+                  </button>
+                  <input ref={fileInputRef} type="file" accept=".json,application/json" onChange={handleFileSelect} className="hidden" />
                 </div>
               </div>
             </div>
@@ -470,6 +572,75 @@
                   
                   <button onClick={() => setShowSettings(false)} className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/30">
                     Speichern & Schließen
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* IMPORT JSON MODAL */}
+            {importPreview && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+                <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md relative">
+                  <button onClick={() => setImportPreview(null)} className="absolute top-4 right-4 p-2 text-slate-500 hover:text-red-500 transition rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <i className="ph-bold ph-x text-xl"></i>
+                  </button>
+                  
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg">
+                      <i className="ph-fill ph-upload-simple text-2xl"></i>
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold">Backup importieren</h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">Daten aus JSON-Datei laden</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 dark:bg-black/30 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 mb-5 space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <i className="ph-bold ph-file text-blue-500"></i>
+                      <span className="font-semibold text-slate-700 dark:text-slate-300">{importPreview.fileName}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3 mt-3">
+                      <div className="bg-white dark:bg-slate-800 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-black text-blue-600 dark:text-blue-400">{importPreview.years}</div>
+                        <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Jahre</div>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-black text-purple-600 dark:text-purple-400">{importPreview.months}</div>
+                        <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Monate</div>
+                      </div>
+                      <div className="bg-white dark:bg-slate-800 rounded-xl p-3 text-center">
+                        <div className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{importPreview.items || '–'}</div>
+                        <div className="text-[10px] font-bold uppercase text-slate-500 tracking-wider">Einträge</div>
+                      </div>
+                    </div>
+                    {importPreview.settings && (
+                      <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 mt-2">
+                        <i className="ph-bold ph-check-circle"></i> Einstellungen (FIRE, Meilensteine) enthalten
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    <button 
+                      onClick={() => confirmImportJSON('merge')}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition shadow-lg shadow-blue-500/30 flex items-center justify-center gap-2"
+                    >
+                      <i className="ph-bold ph-git-merge text-lg"></i> Intelligent Mergen
+                    </button>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center -mt-1">Fehlende Monate & Einträge ergänzen, bestehende Daten behalten</p>
+                    
+                    <button 
+                      onClick={() => confirmImportJSON('replace')}
+                      className="w-full bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 font-bold py-3 rounded-xl transition border border-red-500/20 flex items-center justify-center gap-2"
+                    >
+                      <i className="ph-bold ph-warning text-lg"></i> Komplett Ersetzen
+                    </button>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400 text-center -mt-1">Alle aktuellen Daten überschreiben mit dem Backup</p>
+                  </div>
+
+                  <button onClick={() => setImportPreview(null)} className="mt-4 w-full text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 font-semibold py-2 transition">
+                    Abbrechen
                   </button>
                 </div>
               </div>
